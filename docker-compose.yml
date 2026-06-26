@@ -1,0 +1,22 @@
+services:
+  roblox:
+    build: .
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - roblox-tools:/home/codex/.aftman
+    user: root
+    environment:
+      HOME: /home/codex
+      ROBLOX_API_KEY: ${ROBLOX_API_KEY:-}
+      ROBLOX_UNIVERSE_ID: ${ROBLOX_UNIVERSE_ID:-}
+      ROBLOX_PLACE_ID: ${ROBLOX_PLACE_ID:-}
+      ROBLOX_LOBBY_PLACE_ID: ${ROBLOX_LOBBY_PLACE_ID:-}
+      ROBLOX_RACER_PLACE_ID: ${ROBLOX_RACER_PLACE_ID:-}
+    mem_limit: 2g
+    cpus: 1
+    tty: true
+    stdin_open: true
+
+volumes:
+  roblox-tools:

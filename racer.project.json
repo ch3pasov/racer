@@ -1,0 +1,29 @@
+{
+  "name": "RacerLab",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      },
+      "RacerShared": {
+        "$path": "src/racer/shared"
+      }
+    },
+
+    "ServerScriptService": {
+      "Server": {
+        "$path": "src/racer/server"
+      }
+    },
+
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/racer/client"
+        }
+      }
+    }
+  }
+}

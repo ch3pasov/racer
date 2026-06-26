@@ -1,0 +1,12 @@
+.env
+build/
+.aftman/
+__pycache__/
+*.pyc
+
+# This repository preserves Racer Lab only. Other place work stays on disk, but
+# belongs in separate repositories.
+archive/
+default.project.json
+src/lobby/
+src/shared/GameConfig.lua
