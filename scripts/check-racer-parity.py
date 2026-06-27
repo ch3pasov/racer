@@ -3,6 +3,8 @@ from pathlib import Path
 import re
 import sys
 import math
+import struct
+import zlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +12,7 @@ CONFIG = (ROOT / "src/racer/shared/RacerConfig.lua").read_text()
 CLIENT = (ROOT / "src/racer/client/Main.client.lua").read_text()
 SERVER = (ROOT / "src/racer/server/Main.server.lua").read_text()
 MATH = (ROOT / "src/racer/shared/RacerMath.lua").read_text()
+TEXTURES = (ROOT / "src/racer/shared/RacerTextures.lua").read_text()
 
 
 def fail(message: str):
@@ -20,6 +23,46 @@ def fail(message: str):
 def require(pattern: str, text: str, message: str):
     if not re.search(pattern, text, re.MULTILINE | re.DOTALL):
         fail(message)
+
+
+def read_png_rgba(path: Path):
+    data = path.read_bytes()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        fail(f"{path} must be a PNG")
+    offset = 8
+    width = height = None
+    color_type = None
+    idat = bytearray()
+    while offset < len(data):
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        kind = data[offset + 4 : offset + 8]
+        payload = data[offset + 8 : offset + 8 + length]
+        offset += 12 + length
+        if kind == b"IHDR":
+            width, height, bit_depth, color_type, _, _, _ = struct.unpack(">IIBBBBB", payload)
+            if bit_depth != 8 or color_type != 6:
+                fail(f"{path} must be an 8-bit RGBA PNG")
+        elif kind == b"IDAT":
+            idat.extend(payload)
+        elif kind == b"IEND":
+            break
+    if width is None or height is None or color_type is None:
+        fail(f"{path} has no PNG header")
+    raw = zlib.decompress(bytes(idat))
+    stride = width * 4
+    rows = []
+    cursor = 0
+    previous = bytearray(stride)
+    for _ in range(height):
+        filter_type = raw[cursor]
+        cursor += 1
+        row = bytearray(raw[cursor : cursor + stride])
+        cursor += stride
+        if filter_type != 0:
+            fail(f"{path} must use unfiltered scanlines for parity inspection")
+        rows.append(row)
+        previous = row
+    return width, height, rows
 
 
 SPRITE_SCALE = 0.3 / 80
@@ -51,6 +94,33 @@ def original_render_sprite_center(offset: float, sprite_width: int) -> float:
 version = re.search(r'VersionBuild\s*=\s*"([^"]+)"', CONFIG)
 if not version:
     fail("RacerConfig.VersionBuild must be present")
+
+if "game.PlaceVersion" not in SERVER:
+    fail("version badge must use DataModel.PlaceVersion instead of a manually bumped build number")
+
+if "label.Text = `build {RacerConfig.VersionBuild}`" in SERVER:
+    fail("version badge must not render the manual VersionBuild directly")
+
+texture_asset = re.search(r'Image\s*=\s*"rbxassetid://(\d+)"', TEXTURES)
+if not texture_asset:
+    fail("RacerTextures.Image must point at an uploaded Roblox image asset")
+
+texture_png = ROOT / "assets/racer/textures/racer-sprites-v1.png"
+if not texture_png.exists():
+    fail("local racer texture atlas must exist")
+texture_width, texture_height, texture_rows = read_png_rgba(texture_png)
+for match in re.finditer(
+    r"([A-Z0-9_]+)\s*=\s*\{\s*x\s*=\s*(\d+),\s*y\s*=\s*(\d+),\s*w\s*=\s*(\d+),\s*h\s*=\s*(\d+)\s*\}",
+    TEXTURES,
+):
+    name, x, y, w, h = match.groups()
+    x, y, w, h = int(x), int(y), int(w), int(h)
+    if x < 0 or y < 0 or x + w > texture_width or y + h > texture_height:
+        fail(f"texture rect for {name} is outside the atlas")
+    bottom_row = texture_rows[y + h - 1]
+    bottom_alpha_count = sum(1 for pixel_x in range(x, x + w) if bottom_row[pixel_x * 4 + 3] > 0)
+    if bottom_alpha_count == 0:
+        fail(f"texture sprite {name} must touch the bottom of its hitbox rect")
 
 expected_sprites = {
     "PALM_TREE": (215, 540),
@@ -808,6 +878,8 @@ for forbidden in [
 	"RacerMath.limit(\n\t\t\titem.offset",
 	"renderer.car.Rotation = steer",
 	"advanceTrafficOffsets",
+	"avoidTargetId",
+	"avoidDirection",
 	"RoadsideCollisionSegmentOffsets",
 	"table.sort(objects",
 	"table.sort(trafficList",
@@ -1054,6 +1126,9 @@ for token in [
 
 if "render(fullRenderer, renderState)" not in CLIENT:
     fail("active player renderer must render every frame like javascript-racer")
+
+if "math.min(\n\t\tpredictedState.fastLapTime.Value,\n\t\tsource.fastLapTime.Value" not in CLIENT:
+    fail("active player best lap prediction must not be overwritten by a slower server snapshot")
 
 if "if state.trafficOffsetsBlob then state.trafficOffsetsBlob.Value else \"\"" not in CLIENT:
     fail("world screen render signatures must include replicated traffic offsets")

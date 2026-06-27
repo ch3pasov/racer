@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local racerShared = ReplicatedStorage:WaitForChild("RacerShared")
 local RacerConfig = require(racerShared.RacerConfig)
 local RacerMath = require(racerShared.RacerMath)
+local RacerTextures = require(racerShared.RacerTextures)
 
 local player = Players.LocalPlayer
 local actionEvent = ReplicatedStorage:WaitForChild("RacerAction")
@@ -47,6 +48,8 @@ local BACKGROUND_SPEEDS = {
 	Hill = 0.002,
 	Tree = 0.003,
 }
+
+local useTextureArt = true
 
 local keyMap = {
 	[Enum.KeyCode.A] = "left",
@@ -172,6 +175,7 @@ local function copyPredictedState(source)
 		currentLapTime = valueProxy(source.currentLapTime.Value),
 		lastLapTime = valueProxy(source.lastLapTime.Value),
 		fastLapTime = valueProxy(source.fastLapTime.Value),
+		lapStarted = source.currentLapTime.Value > 0,
 		playerX = valueProxy(source.playerX.Value),
 		steer = valueProxy(source.steer.Value),
 		skyOffset = valueProxy(source.skyOffset.Value),
@@ -198,7 +202,10 @@ local function ensurePredictedState(source)
 		return predictedState
 	end
 
-	predictedState.fastLapTime.Value = source.fastLapTime.Value
+	predictedState.fastLapTime.Value = math.min(
+		predictedState.fastLapTime.Value,
+		source.fastLapTime.Value
+	)
 	predictedState.lastLapTime.Value = source.lastLapTime.Value
 	return predictedState
 end
@@ -354,13 +361,14 @@ local function updatePredictedState(source, dt: number)
 		end
 
 		if mode == "final" and prediction.position.Value > playerZ then
-			if prediction.currentLapTime.Value > 0 and startPosition < playerZ then
+			if prediction.lapStarted and startPosition < playerZ then
 				prediction.lastLapTime.Value = prediction.currentLapTime.Value
 				prediction.currentLapTime.Value = 0
 				if prediction.lastLapTime.Value <= prediction.fastLapTime.Value then
 					prediction.fastLapTime.Value = prediction.lastLapTime.Value
 				end
 			else
+				prediction.lapStarted = true
 				prediction.currentLapTime.Value += step
 			end
 		end
@@ -433,6 +441,48 @@ local function createFrame(parent: Instance, name: string, color: Color3, zIndex
 	frame.ZIndex = zIndex
 	frame.Parent = parent
 	return frame
+end
+
+local function textureAtlasImage(): string?
+	if RacerTextures.Image == nil or RacerTextures.Image == "" then
+		return nil
+	end
+	return RacerTextures.Image
+end
+
+local function textureArtEnabled(): boolean
+	return useTextureArt and textureAtlasImage() ~= nil
+end
+
+local function createTextureImage(parent: Instance, zIndex: number)
+	local image = Instance.new("ImageLabel")
+	image.Name = "Texture"
+	image.AnchorPoint = Vector2.new(0, 0)
+	image.BackgroundTransparency = 1
+	image.BorderSizePixel = 0
+	image.Position = UDim2.fromScale(0, 0)
+	image.ScaleType = Enum.ScaleType.Stretch
+	image.Size = UDim2.fromScale(1, 1)
+	image.Visible = false
+	image.ZIndex = zIndex
+	image.Parent = parent
+	return image
+end
+
+local function applyTextureImage(texture: Instance?, spriteName: string?): boolean
+	local image = textureAtlasImage()
+	if not image or not spriteName or not texture or not texture:IsA("ImageLabel") then
+		return false
+	end
+	local rect = RacerTextures.Sprites[spriteName]
+	if not rect then
+		return false
+	end
+	texture.Image = image
+	texture.ImageRectOffset = Vector2.new(rect.x, rect.y)
+	texture.ImageRectSize = Vector2.new(rect.w, rect.h)
+	texture.Visible = true
+	return true
 end
 
 local function createLayer(parent: Instance, name: string, zIndex: number)
@@ -613,6 +663,7 @@ local function createRenderer(
 			content.Position = UDim2.fromScale(0, 0)
 			content.Size = UDim2.fromScale(1, 1)
 			rounded(content, 2)
+			createTextureImage(content, 765)
 
 			local shadow = createFrame(content, "Shadow", Color3.fromRGB(13, 17, 20), 759)
 			shadow.AnchorPoint = Vector2.new(0.5, 1)
@@ -667,6 +718,7 @@ local function createRenderer(
 	hood.Position = UDim2.new(0.07, 0, 0.62, 0)
 	hood.Size = UDim2.new(0.86, 0, 0.18, 0)
 	rounded(hood, 2)
+	createTextureImage(car, PLAYER_CAR_Z_INDEX + 3)
 
 	local status =
 		createLabel(root, "Status", UDim2.new(0.5, -320, 0, 12), UDim2.fromOffset(640, 42), 15)
@@ -726,8 +778,20 @@ local function setSpriteObject(object, spriteData)
 	local detailRoot = if content and content:IsA("GuiObject") then content else object
 	detailRoot.ZIndex = object.ZIndex
 	detailRoot.BackgroundColor3 = spriteData.definition.color
+	detailRoot.BackgroundTransparency = 0
 	detailRoot.Rotation = 0
 	object.Rotation = 0
+	local texture = detailRoot:FindFirstChild("Texture")
+	if texture and texture:IsA("GuiObject") then
+		texture.ZIndex = object.ZIndex
+	end
+	if textureArtEnabled() and applyTextureImage(texture, spriteData.sprite) then
+		detailRoot.BackgroundTransparency = 1
+	else
+		if texture and texture:IsA("GuiObject") then
+			texture.Visible = false
+		end
+	end
 end
 
 local function setTrafficObject(object, car)
@@ -736,8 +800,22 @@ local function setTrafficObject(object, car)
 	local detailRoot = if content and content:IsA("GuiObject") then content else object
 	detailRoot.ZIndex = object.ZIndex
 	detailRoot.BackgroundColor3 = car.color
+	detailRoot.BackgroundTransparency = 0
 	detailRoot.Rotation = 0
 	object.Rotation = 0
+
+	local texture = detailRoot:FindFirstChild("Texture")
+	local hasTexture = textureArtEnabled() and applyTextureImage(texture, car.sprite)
+	for _, child in detailRoot:GetChildren() do
+		if child:IsA("GuiObject") and child.Name ~= "Texture" then
+			child.Visible = not hasTexture
+		end
+	end
+	if hasTexture then
+		detailRoot.BackgroundTransparency = 1
+	elseif texture and texture:IsA("GuiObject") then
+		texture.Visible = false
+	end
 
 	local roof = detailRoot:FindFirstChild("Roof")
 	if roof and roof:IsA("GuiObject") then
@@ -1146,9 +1224,23 @@ local function render(renderer, state)
 	local playerBounce =
 		RacerConfig.playerBounce(position, speed / RacerConfig.MaxSpeed, HEIGHT / 480)
 	renderer.car.BackgroundColor3 = playerSprite.color
+	renderer.car.BackgroundTransparency = 0
 	renderer.car.Size = UDim2.fromScale(playerWidth, playerHeight)
 	renderer.car.Rotation = 0
 	renderer.car.Position = UDim2.new(0.5, 0, (playerBottomY + playerBounce) / HEIGHT, 0)
+	local playerTexture = renderer.car:FindFirstChild("Texture")
+	local playerHasTexture = textureArtEnabled()
+		and applyTextureImage(playerTexture, playerSprite.name)
+	for _, child in renderer.car:GetChildren() do
+		if child:IsA("GuiObject") and child.Name ~= "Texture" then
+			child.Visible = not playerHasTexture
+		end
+	end
+	if playerHasTexture then
+		renderer.car.BackgroundTransparency = 1
+	elseif playerTexture and playerTexture:IsA("GuiObject") then
+		playerTexture.Visible = false
+	end
 	local windshield = renderer.car:FindFirstChild("Windshield")
 	if windshield and windshield:IsA("GuiObject") then
 		windshield.Position = UDim2.new(0.26 + steer * 0.08, 0, 0.13, 0)
@@ -1191,6 +1283,7 @@ local function renderSignature(state): string
 		state.settingFieldOfView.Value,
 		state.settingFogDensity.Value,
 		state.settingLanes.Value,
+		if textureArtEnabled() then "textures" else "placeholders",
 		math.floor(state.currentLapTime.Value * 10 + 0.5),
 		math.floor(state.lastLapTime.Value * 10 + 0.5),
 		math.floor(state.fastLapTime.Value * 10 + 0.5),
@@ -1230,6 +1323,24 @@ perfLabel.TextXAlignment = Enum.TextXAlignment.Left
 perfLabel.TextYAlignment = Enum.TextYAlignment.Top
 perfLabel.Visible = false
 perfLabel.Text = "Perf log enabled. Press F6 to hide."
+
+local labRejoinButton = Instance.new("TextButton")
+labRejoinButton.Name = "LabRejoinButton"
+labRejoinButton.AnchorPoint = Vector2.new(1, 0)
+labRejoinButton.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
+labRejoinButton.BackgroundTransparency = 0.08
+labRejoinButton.BorderSizePixel = 0
+labRejoinButton.Font = Enum.Font.GothamBold
+labRejoinButton.Position = UDim2.new(1, -18, 0, 18)
+labRejoinButton.Size = UDim2.fromOffset(104, 42)
+labRejoinButton.Text = "Rejoin"
+labRejoinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+labRejoinButton.TextSize = 16
+labRejoinButton.ZIndex = 120
+labRejoinButton.Parent = screenGui
+labRejoinButton.MouseButton1Click:Connect(function()
+	actionEvent:FireServer("Rejoin")
+end)
 
 UserInputService.InputBegan:Connect(function(inputObject, gameProcessed)
 	if gameProcessed then
@@ -1279,6 +1390,7 @@ task.defer(updateFullViewportSize)
 local fullRenderer = createRenderer(fullViewport, "LocalScreen")
 fullRenderer.root.ZIndex = 201
 fullRenderer.root.Size = UDim2.new(1, 0, 1, 0)
+local worldRenderers = {}
 
 local exitButton = Instance.new("TextButton")
 exitButton.Name = "ExitButton"
@@ -1298,17 +1410,56 @@ exitButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("Exit")
 end)
 
+local rejoinButton = Instance.new("TextButton")
+rejoinButton.Name = "RejoinButton"
+rejoinButton.AnchorPoint = Vector2.new(1, 0)
+rejoinButton.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
+rejoinButton.BackgroundTransparency = 0.08
+rejoinButton.BorderSizePixel = 0
+rejoinButton.Font = Enum.Font.GothamBold
+rejoinButton.Position = UDim2.new(1, -130, 0, 18)
+rejoinButton.Size = UDim2.fromOffset(104, 42)
+rejoinButton.Text = "Rejoin"
+rejoinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+rejoinButton.TextSize = 16
+rejoinButton.ZIndex = 260
+rejoinButton.Parent = fullScreen
+rejoinButton.MouseButton1Click:Connect(function()
+	actionEvent:FireServer("Rejoin")
+end)
+
+local settingsButton = Instance.new("TextButton")
+settingsButton.Name = "SettingsButton"
+settingsButton.AnchorPoint = Vector2.new(1, 0)
+settingsButton.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
+settingsButton.BackgroundTransparency = 0.08
+settingsButton.BorderSizePixel = 0
+settingsButton.Font = Enum.Font.GothamBold
+settingsButton.Position = UDim2.new(1, -18, 0, 66)
+settingsButton.Size = UDim2.fromOffset(104, 42)
+settingsButton.Text = "Settings"
+settingsButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+settingsButton.TextSize = 16
+settingsButton.ZIndex = 260
+settingsButton.Parent = fullScreen
+
 local settingsPanel = Instance.new("Frame")
 settingsPanel.Name = "SettingsPanel"
 settingsPanel.AnchorPoint = Vector2.new(1, 0)
 settingsPanel.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
 settingsPanel.BackgroundTransparency = 0.08
 settingsPanel.BorderSizePixel = 0
-settingsPanel.Position = UDim2.new(1, -18, 0, 72)
-settingsPanel.Size = UDim2.fromOffset(238, 304)
+settingsPanel.Position = UDim2.new(1, -18, 0, 114)
+settingsPanel.Size = UDim2.fromOffset(238, 350)
+settingsPanel.Visible = false
 settingsPanel.ZIndex = 260
 settingsPanel.Parent = fullScreen
 rounded(settingsPanel, 6)
+
+settingsButton.MouseButton1Click:Connect(function()
+	settingsPanel.Visible = not settingsPanel.Visible
+	settingsButton.Text = if settingsPanel.Visible then "Hide" else "Settings"
+end)
 
 local settingsTitle = createLabel(
 	settingsPanel,
@@ -1345,6 +1496,8 @@ local settingRows = {
 	{ label = "Fog", key = "FogDensity", valueName = "settingFogDensity" },
 	{ label = "Lanes", key = "Lanes", valueName = "settingLanes" },
 }
+
+local textureToggleLabel: TextButton? = nil
 
 local function currentSettingText(row): string
 	local state = activeState()
@@ -1392,19 +1545,42 @@ for index, row in settingRows do
 	end)
 end
 
-local resetButton =
-	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 256), UDim2.new(1, -24, 0, 36))
-resetButton.MouseButton1Click:Connect(function()
-	actionEvent:FireServer("ResetSettings")
-end)
-
 local function updateSettingLabels()
 	for _, row in settingRows do
 		row.valueLabel.Text = currentSettingText(row)
 	end
+	if textureToggleLabel then
+		local available = textureAtlasImage() ~= nil
+		textureToggleLabel.Text = `{if useTextureArt and available then "[x]" else "[ ]"} Textures`
+		textureToggleLabel.TextColor3 = if available
+			then Color3.fromRGB(255, 255, 255)
+			else Color3.fromRGB(150, 156, 164)
+	end
 end
 
-local worldRenderers = {}
+textureToggleLabel = makeButton(
+	settingsPanel,
+	"[ ] Textures",
+	UDim2.fromOffset(12, 248),
+	UDim2.new(1, -24, 0, 32)
+)
+textureToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+textureToggleLabel.MouseButton1Click:Connect(function()
+	useTextureArt = not useTextureArt
+	fullRenderer.lastSignature = nil
+	for _, entry in worldRenderers do
+		entry.renderer.lastSignature = nil
+	end
+	updateSettingLabels()
+end)
+
+local resetButton =
+	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 296), UDim2.new(1, -24, 0, 36))
+resetButton.MouseButton1Click:Connect(function()
+	actionEvent:FireServer("ResetSettings")
+end)
+updateSettingLabels()
+
 task.spawn(function()
 	local lab = Workspace:WaitForChild("RacerLab", 20)
 	if not lab then
@@ -1463,6 +1639,81 @@ local function releaseInputs()
 	end
 end
 
+local mobileControlButtons = {}
+local mobileButtonColor = Color3.fromRGB(18, 22, 30)
+local mobileButtonPressedColor = Color3.fromRGB(54, 68, 84)
+
+local mobileControls = Instance.new("Frame")
+mobileControls.Name = "MobileControls"
+mobileControls.BackgroundTransparency = 1
+mobileControls.BorderSizePixel = 0
+mobileControls.Size = UDim2.fromScale(1, 1)
+mobileControls.Visible = UserInputService.TouchEnabled
+mobileControls.ZIndex = 270
+mobileControls.Parent = fullScreen
+
+local function resetMobileControlButtons()
+	for _, button in mobileControlButtons do
+		button.BackgroundColor3 = mobileButtonColor
+	end
+end
+
+local function bindMobileHoldButton(button: TextButton, inputName: string)
+	local activePointers = {}
+
+	button.InputBegan:Connect(function(inputObject)
+		if
+			inputObject.UserInputType ~= Enum.UserInputType.Touch
+			and inputObject.UserInputType ~= Enum.UserInputType.MouseButton1
+		then
+			return
+		end
+
+		activePointers[inputObject] = true
+		button.BackgroundColor3 = mobileButtonPressedColor
+		setInput(inputName, true)
+	end)
+
+	button.InputEnded:Connect(function(inputObject)
+		if not activePointers[inputObject] then
+			return
+		end
+
+		activePointers[inputObject] = nil
+		for _ in activePointers do
+			return
+		end
+		button.BackgroundColor3 = mobileButtonColor
+		setInput(inputName, false)
+	end)
+end
+
+local function createMobileControlButton(name: string, text: string, position: UDim2, inputName: string)
+	local button = Instance.new("TextButton")
+	button.Name = name
+	button.AnchorPoint = Vector2.new(0, 1)
+	button.BackgroundColor3 = mobileButtonColor
+	button.BackgroundTransparency = 0.12
+	button.BorderSizePixel = 0
+	button.Font = Enum.Font.GothamBold
+	button.Position = position
+	button.Size = UDim2.fromOffset(66, 56)
+	button.Text = text
+	button.TextColor3 = Color3.fromRGB(255, 255, 255)
+	button.TextSize = 14
+	button.ZIndex = 271
+	button.Parent = mobileControls
+	rounded(button, 8)
+	table.insert(mobileControlButtons, button)
+	bindMobileHoldButton(button, inputName)
+	return button
+end
+
+createMobileControlButton("MobileLeftButton", "Left", UDim2.new(0, 16, 1, -24), "left")
+createMobileControlButton("MobileRightButton", "Right", UDim2.new(0, 90, 1, -24), "right")
+createMobileControlButton("MobileBrakeButton", "Brake", UDim2.new(1, -156, 1, -24), "slower")
+createMobileControlButton("MobileGasButton", "Gas", UDim2.new(1, -82, 1, -24), "faster")
+
 local function racerControlAction(_, inputState: Enum.UserInputState, inputObject: InputObject)
 	if inputObject.KeyCode == Enum.KeyCode.Tab then
 		if inputState == Enum.UserInputState.Begin then
@@ -1515,6 +1766,7 @@ local function unbindRacerControls()
 	controlsBound = false
 	ContextActionService:UnbindAction(CONTROL_ACTION)
 	releaseInputs()
+	resetMobileControlButtons()
 	local camera = Workspace.CurrentCamera
 	if camera then
 		camera.CameraType = savedCameraType or Enum.CameraType.Custom
@@ -1538,6 +1790,7 @@ local function updateHud()
 	local state = activeState()
 	local active = state ~= nil
 	fullScreen.Visible = active
+	labRejoinButton.Visible = not active
 	title.Visible = false
 	hint.Visible = not active
 	if active then
@@ -1545,6 +1798,8 @@ local function updateHud()
 		updateSettingLabels()
 		return
 	end
+	settingsPanel.Visible = false
+	settingsButton.Text = "Settings"
 	unbindRacerControls()
 	hint.Text = anyBusyStatus() or "Walk to a screen and press E."
 end

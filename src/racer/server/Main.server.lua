@@ -134,6 +134,9 @@ perfHistory.Parent = perfFolder
 
 local SPAWN_CFRAME = CFrame.new(0, 4, 22)
 local LOBBY_PLACE_ID = GeneratedPlaceIds.LobbyPlaceId or 0
+local RACER_PLACE_ID = if GeneratedPlaceIds.RacerPlaceId and GeneratedPlaceIds.RacerPlaceId > 0
+	then GeneratedPlaceIds.RacerPlaceId
+	else game.PlaceId
 local MAX_ACCUMULATED_TIME = 1
 local MAX_STEPS_PER_HEARTBEAT = 8
 
@@ -243,6 +246,7 @@ local function createSession(definition)
 		currentLapTime = 0,
 		lastLapTime = 0,
 		fastLapTime = 180,
+		lapStarted = false,
 		playerX = 0,
 		steer = 0,
 		skyOffset = 0,
@@ -347,6 +351,7 @@ local function resetRun(session)
 	session.trafficTime = 0
 	session.currentLapTime = 0
 	session.lastLapTime = 0
+	session.lapStarted = false
 	session.playerX = 0
 	session.steer = 0
 	session.skyOffset = 0
@@ -394,6 +399,32 @@ local function exitScreen(player: Player, message: string?)
 	resetRun(session)
 	session.values.Status.Value = message or `{session.definition.Name} ready.`
 	actionEvent:FireClient(player, "Exited")
+end
+
+local function rejoinPlace(player: Player)
+	if RACER_PLACE_ID <= 0 then
+		actionEvent:FireClient(player, "Busy", "Rejoin is unavailable in this place.")
+		return
+	end
+
+	local reservedOk, reservedErr = pcall(function()
+		local accessCode = TeleportService:ReserveServer(RACER_PLACE_ID)
+		exitScreen(player, "Screen ready.")
+		TeleportService:TeleportToPrivateServer(RACER_PLACE_ID, accessCode, { player })
+	end)
+	if reservedOk then
+		return
+	end
+
+	warn(`[RacerLab] reserved rejoin failed for {player.Name}: {reservedErr}`)
+	local fallbackOk, fallbackErr = pcall(function()
+		exitScreen(player, "Screen ready.")
+		TeleportService:Teleport(RACER_PLACE_ID, player)
+	end)
+	if not fallbackOk then
+		warn(`[RacerLab] fallback rejoin failed for {player.Name}: {fallbackErr}`)
+		actionEvent:FireClient(player, "Busy", "Rejoin failed. Try again.")
+	end
 end
 
 local function enterScreen(player: Player, screenId: string)
@@ -560,7 +591,8 @@ local function createVersionBadge()
 	label.BorderSizePixel = 0
 	label.Font = Enum.Font.GothamBold
 	label.Size = UDim2.fromScale(1, 1)
-	label.Text = `build {RacerConfig.VersionBuild}`
+	local version = if game.PlaceVersion > 0 then tostring(game.PlaceVersion) else RacerConfig.VersionBuild
+	label.Text = `build {version}`
 	label.TextColor3 = Color3.fromRGB(236, 240, 244)
 	label.TextScaled = true
 	label.Parent = surfaceGui
@@ -735,13 +767,14 @@ local function updateRacer(session, dt: number)
 	end
 
 	if session.definition.Mode == "final" and session.position > playerZ then
-		if session.currentLapTime > 0 and startPosition < playerZ then
+		if session.lapStarted and startPosition < playerZ then
 			session.lastLapTime = session.currentLapTime
 			session.currentLapTime = 0
 			if session.lastLapTime <= session.fastLapTime then
 				session.fastLapTime = session.lastLapTime
 			end
 		else
+			session.lapStarted = true
 			session.currentLapTime += dt
 		end
 	end
@@ -835,6 +868,8 @@ actionEvent.OnServerEvent:Connect(
 	function(player: Player, actionName: string, settingName: string?, direction: number?)
 		if actionName == "Exit" then
 			exitScreen(player, "Screen ready.")
+		elseif actionName == "Rejoin" then
+			rejoinPlace(player)
 		elseif actionName == "Setting" and settingName and direction then
 			adjustSetting(player, settingName, direction)
 		elseif actionName == "ResetSettings" then

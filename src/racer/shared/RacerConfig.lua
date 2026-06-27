@@ -2,7 +2,7 @@ local RacerMath = require(script.Parent.RacerMath)
 
 local RacerConfig = {
 	Name = "Racer Lab",
-	VersionBuild = "123",
+	VersionBuild = "local",
 	Fps = 60,
 	Width = 1024,
 	Height = 768,
@@ -263,6 +263,10 @@ RacerConfig.SpriteDefs = {
 		color = Color3.fromRGB(255, 221, 78),
 	},
 }
+
+for spriteName, spriteDef in RacerConfig.SpriteDefs do
+	spriteDef.name = spriteName
+end
 
 function RacerConfig.playerSpriteDef(steer: number, updown: number)
 	local spriteName
