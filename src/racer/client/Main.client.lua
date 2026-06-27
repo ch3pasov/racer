@@ -192,7 +192,8 @@ local function copyPredictedState(source)
 			source.trafficTime.Value,
 			trackLength,
 			segmentCount,
-			trafficOffsets
+			trafficOffsets,
+			mode
 		)
 	end
 	return {
@@ -274,7 +275,8 @@ local function updatePredictedState(source, dt: number)
 				prediction.playerX.Value,
 				prediction.speed.Value,
 				prediction.settingDrawDistance.Value,
-				prediction.trafficState
+				prediction.trafficState,
+				mode
 			)
 			prediction.trafficBySegment = trafficBySegment
 		else
@@ -647,6 +649,16 @@ local function createRenderer(
 
 		local road =
 			createFrame(rowRoot, "Road", RacerConfig.Colors.Light.Road, ROAD_DETAIL_Z_INDEX)
+		local junctionLeft =
+			createFrame(rowRoot, "JunctionLeft", RacerConfig.Colors.Light.Road, ROAD_DETAIL_Z_INDEX)
+		junctionLeft.Visible = false
+		local junctionRight = createFrame(
+			rowRoot,
+			"JunctionRight",
+			RacerConfig.Colors.Light.Road,
+			ROAD_DETAIL_Z_INDEX
+		)
+		junctionRight.Visible = false
 		local leftRumble =
 			createFrame(rowRoot, "LeftRumble", RacerConfig.Colors.Light.Rumble, ROAD_DETAIL_Z_INDEX)
 		local rightRumble = createFrame(
@@ -671,6 +683,8 @@ local function createRenderer(
 		table.insert(rows, {
 			root = rowRoot,
 			road = road,
+			junctionLeft = junctionLeft,
+			junctionRight = junctionRight,
 			leftRumble = leftRumble,
 			rightRumble = rightRumble,
 			laneMarkers = laneMarkers,
@@ -959,7 +973,8 @@ local function setRow(
 	roadHalfWidthPx: number,
 	color,
 	fog: number,
-	lanes: number
+	lanes: number,
+	junctionKind: string?
 )
 	local top = math.clamp(topY / HEIGHT, 0, 1)
 	local bottom = math.clamp(bottomY / HEIGHT, 0, 1)
@@ -978,6 +993,19 @@ local function setRow(
 	row.road.Position = UDim2.new(centerX - roadWidth / 2, 0, 0, 0)
 	row.road.Size = UDim2.new(roadWidth, 0, 1, 0)
 	row.road.BackgroundColor3 = colorWithFog(color.Road, fog)
+
+	local branchHeight = math.min(1, roadWidth * 0.35)
+	local branchY = 0.5 - branchHeight / 2
+	local showLeft = junctionKind == "left" or junctionKind == "cross"
+	local showRight = junctionKind == "right" or junctionKind == "cross"
+	row.junctionLeft.Visible = showLeft
+	row.junctionLeft.Position = UDim2.new(0, 0, branchY, 0)
+	row.junctionLeft.Size = UDim2.new(math.max(0, centerX - roadWidth / 2), 0, branchHeight, 0)
+	row.junctionLeft.BackgroundColor3 = colorWithFog(color.Road, fog)
+	row.junctionRight.Visible = showRight
+	row.junctionRight.Position = UDim2.new(centerX + roadWidth / 2, 0, branchY, 0)
+	row.junctionRight.Size = UDim2.new(math.max(0, 1 - (centerX + roadWidth / 2)), 0, branchHeight, 0)
+	row.junctionRight.BackgroundColor3 = colorWithFog(color.Road, fog)
 
 	row.leftRumble.Position = UDim2.new(centerX - roadWidth / 2 - rumbleWidth, 0, 0, 0)
 	row.leftRumble.Size = UDim2.new(rumbleWidth, 0, 1, 0)
@@ -1108,6 +1136,7 @@ local function render(renderer, state)
 				local segmentBottom = math.min(math.ceil(p1.y), math.floor(maxY), SCREEN_MAX_Y)
 				local segmentHeight = p1.y - p2.y
 				local scanY = segmentTop
+				local junctionKind = RacerConfig.junctionForSegment(mode, projected.index)
 				while scanY < segmentBottom do
 					rowCursor += 1
 					if rowCursor > #renderer.rows then
@@ -1125,7 +1154,8 @@ local function render(renderer, state)
 						RacerMath.interpolate(p2.w, p1.w, percent),
 						color,
 						fog,
-						lanes
+						lanes,
+						junctionKind
 					)
 					scanY = nextY
 				end
@@ -1152,7 +1182,8 @@ local function render(renderer, state)
 					trafficTime,
 					trackLength,
 					segmentCount,
-					state.trafficOffsets
+					state.trafficOffsets,
+					mode
 				)
 				trafficItems = trafficState.items
 				orderedTrafficBySegment = trafficState.bySegment
@@ -1161,7 +1192,8 @@ local function render(renderer, state)
 					trafficTime,
 					trackLength,
 					segmentCount,
-					replicatedTrafficOffsets(state)
+					replicatedTrafficOffsets(state),
+					mode
 				)
 				trafficItems = trafficState.items
 				orderedTrafficBySegment = trafficState.bySegment

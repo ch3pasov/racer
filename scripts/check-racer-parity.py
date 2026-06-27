@@ -1079,7 +1079,7 @@ require(
     "server traffic collision must only run in v4 final",
 )
 require(
-    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?RacerConfig\.createTrafficState\(\s*trafficTime,\s*trackLength,\s*segmentCount,\s*replicatedTrafficOffsets\(state\)\s*\).*?RacerConfig\.spritesForSegment',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?RacerConfig\.createTrafficState\(\s*trafficTime,\s*trackLength,\s*segmentCount,\s*replicatedTrafficOffsets\(state\),\s*mode\s*\).*?RacerConfig\.spritesForSegment',
     CLIENT,
     "world/object rendering must rebuild v4 final traffic directly from the replicated server snapshot",
 )
@@ -1115,7 +1115,7 @@ if "state.trafficOffsets" not in CLIENT:
     fail("fullscreen render must use predicted traffic offsets for collision/render parity")
 
 require(
-    r"if\s+state\.trafficOffsets\s+then\s*local\s+trafficState\s*=\s*RacerConfig\.createTrafficState\(\s*trafficTime,\s*trackLength,\s*segmentCount,\s*state\.trafficOffsets\s*\)\s*trafficItems\s*=\s*trafficState\.items\s*orderedTrafficBySegment\s*=\s*trafficState\.bySegment",
+    r"if\s+state\.trafficOffsets\s+then\s*local\s+trafficState\s*=\s*RacerConfig\.createTrafficState\(\s*trafficTime,\s*trackLength,\s*segmentCount,\s*state\.trafficOffsets,\s*mode\s*\)\s*trafficItems\s*=\s*trafficState\.items\s*orderedTrafficBySegment\s*=\s*trafficState\.bySegment",
     CLIENT,
     "traffic offset fallback must rebuild segment.cars-style grouping before rendering",
 )

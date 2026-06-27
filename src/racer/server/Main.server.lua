@@ -408,7 +408,8 @@ local function resetRun(session)
 			0,
 			RacerConfig.trackLength(session.definition.Mode),
 			RacerConfig.segmentCount(session.definition.Mode),
-			session.trafficOffsets
+			session.trafficOffsets,
+			session.definition.Mode
 		)
 	else
 		session.trafficOffsets = {}
@@ -933,7 +934,8 @@ local function updateRacer(session, dt: number)
 			session.playerX,
 			session.speed,
 			session.values.SettingDrawDistance.Value,
-			session.trafficState
+			session.trafficState,
+			session.definition.Mode
 		)
 	end
 

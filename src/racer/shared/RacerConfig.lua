@@ -682,6 +682,32 @@ RacerConfig.Tracks = {
 	v5 = buildFinalTrack(),
 }
 
+RacerConfig.V5Junctions = {
+	{ segment = 880, length = 26, kind = "cross" },
+	{ segment = 2160, length = 22, kind = "left" },
+	{ segment = 3650, length = 24, kind = "right" },
+	{ segment = 5280, length = 28, kind = "cross" },
+}
+RacerConfig.V5JunctionTrafficBuffer = 8
+
+function RacerConfig.junctionForSegment(mode: string, segmentIndex: number, buffer: number?): string?
+	if mode ~= "v5" then
+		return nil
+	end
+	local segmentCount = RacerConfig.segmentCount(mode)
+	local padding = buffer or 0
+	for _, junction in RacerConfig.V5Junctions do
+		local startIndex = junction.segment - padding
+		local endIndex = junction.segment + junction.length + padding
+		for index = startIndex, endIndex do
+			if ((index % segmentCount) + segmentCount) % segmentCount == segmentIndex then
+				return junction.kind
+			end
+		end
+	end
+	return nil
+end
+
 function RacerConfig.buildTraffic(mode: string, seed: number?)
 	local track = RacerConfig.Tracks[mode] or RacerConfig.Tracks.straight
 	return buildTrafficCars(#track * RacerConfig.SegmentLength, seed)
@@ -916,19 +942,27 @@ function RacerConfig.trafficCollisionPosition(
 	return RacerMath.increase(trafficZ, -playerZ, trackLength)
 end
 
-function RacerConfig.trafficSnapshot(trafficTime: number, trackLength: number, segmentCount: number)
+function RacerConfig.trafficSnapshot(
+	trafficTime: number,
+	trackLength: number,
+	segmentCount: number,
+	mode: string?
+)
 	local items = {}
 	for _, car in RacerConfig.Traffic.Cars do
 		local z = RacerMath.increase(car.z, car.speed * trafficTime, trackLength)
-		table.insert(items, {
-			car = car,
-			z = z,
-			segmentIndex = math.floor(z / RacerConfig.SegmentLength) % segmentCount,
-			percent = RacerMath.percentRemaining(z, RacerConfig.SegmentLength),
-			offset = car.offset,
-			speed = car.speed,
-			width = car.width * RacerConfig.SpriteScale,
-		})
+		local segmentIndex = math.floor(z / RacerConfig.SegmentLength) % segmentCount
+		if not RacerConfig.junctionForSegment(mode or "final", segmentIndex, RacerConfig.V5JunctionTrafficBuffer) then
+			table.insert(items, {
+				car = car,
+				z = z,
+				segmentIndex = segmentIndex,
+				percent = RacerMath.percentRemaining(z, RacerConfig.SegmentLength),
+				offset = car.offset,
+				speed = car.speed,
+				width = car.width * RacerConfig.SpriteScale,
+			})
+		end
 	end
 	return items
 end
@@ -950,9 +984,10 @@ function RacerConfig.createTrafficState(
 	trafficTime: number,
 	trackLength: number,
 	segmentCount: number,
-	trafficOffsets
+	trafficOffsets,
+	mode: string?
 )
-	local trafficItems = RacerConfig.trafficSnapshot(trafficTime, trackLength, segmentCount)
+	local trafficItems = RacerConfig.trafficSnapshot(trafficTime, trackLength, segmentCount, mode)
 	if trafficOffsets then
 		RacerConfig.applyTrafficOffsets(trafficOffsets, trafficItems)
 	end
@@ -1040,7 +1075,8 @@ function RacerConfig.advanceTraffic(
 	playerX: number,
 	playerSpeed: number,
 	drawDistance: number?,
-	trafficState
+	trafficState,
+	mode: string?
 )
 	local trafficItems = nil
 	local trafficBySegment = nil
@@ -1055,7 +1091,7 @@ function RacerConfig.advanceTraffic(
 		trafficBySegment = trafficState.bySegment
 	else
 		local rebuiltState =
-			RacerConfig.createTrafficState(trafficTime, trackLength, segmentCount, trafficOffsets)
+			RacerConfig.createTrafficState(trafficTime, trackLength, segmentCount, trafficOffsets, mode)
 		trafficItems = rebuiltState.items
 		trafficBySegment = rebuiltState.bySegment
 		if trafficState then
