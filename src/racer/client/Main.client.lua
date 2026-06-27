@@ -50,6 +50,7 @@ local BACKGROUND_SPEEDS = {
 }
 
 local useTextureArt = true
+local avatarImageCache = {}
 
 local keyMap = {
 	[Enum.KeyCode.A] = "left",
@@ -116,6 +117,33 @@ local function activeState()
 		end
 	end
 	return nil
+end
+
+local function thumbnailForUserId(userId: number): string?
+	if userId <= 0 then
+		return nil
+	end
+	if avatarImageCache[userId] ~= nil then
+		return avatarImageCache[userId]
+	end
+	local ok, image = pcall(function()
+		return Players:GetUserThumbnailAsync(
+			userId,
+			Enum.ThumbnailType.AvatarBust,
+			Enum.ThumbnailSize.Size100x100
+		)
+	end)
+	avatarImageCache[userId] = if ok then image else false
+	return if ok then image else nil
+end
+
+local function passengerUserIdFor(activeUserId: number): number
+	for _, otherPlayer in Players:GetPlayers() do
+		if otherPlayer.UserId ~= activeUserId then
+			return otherPlayer.UserId
+		end
+	end
+	return 0
 end
 
 local function anyBusyStatus(): string?
@@ -720,6 +748,26 @@ local function createRenderer(
 	rounded(hood, 2)
 	createTextureImage(car, PLAYER_CAR_Z_INDEX + 3)
 
+	local driverAvatar = Instance.new("ImageLabel")
+	driverAvatar.Name = "DriverAvatar"
+	driverAvatar.BackgroundTransparency = 1
+	driverAvatar.Position = UDim2.new(0.34, 0, 0.18, 0)
+	driverAvatar.Size = UDim2.new(0.14, 0, 0.24, 0)
+	driverAvatar.ZIndex = PLAYER_CAR_Z_INDEX + 4
+	driverAvatar.Visible = false
+	driverAvatar.Parent = car
+	rounded(driverAvatar, 3)
+
+	local passengerAvatar = Instance.new("ImageLabel")
+	passengerAvatar.Name = "PassengerAvatar"
+	passengerAvatar.BackgroundTransparency = 1
+	passengerAvatar.Position = UDim2.new(0.52, 0, 0.18, 0)
+	passengerAvatar.Size = UDim2.new(0.14, 0, 0.24, 0)
+	passengerAvatar.ZIndex = PLAYER_CAR_Z_INDEX + 4
+	passengerAvatar.Visible = false
+	passengerAvatar.Parent = car
+	rounded(passengerAvatar, 3)
+
 	local status =
 		createLabel(root, "Status", UDim2.new(0.5, -320, 0, 12), UDim2.fromOffset(640, 42), 15)
 	status.ZIndex = OVERLAY_Z_INDEX + 10
@@ -1245,6 +1293,21 @@ local function render(renderer, state)
 	if windshield and windshield:IsA("GuiObject") then
 		windshield.Position = UDim2.new(0.26 + steer * 0.08, 0, 0.13, 0)
 	end
+	local showAvatarPeople = mode == "v5" and playerHasTexture
+	local driverAvatar = renderer.car:FindFirstChild("DriverAvatar")
+	if driverAvatar and driverAvatar:IsA("ImageLabel") then
+		local image = thumbnailForUserId(state.activeUserId.Value)
+		driverAvatar.Image = image or ""
+		driverAvatar.Visible = showAvatarPeople and image ~= nil
+		driverAvatar.Position = UDim2.new(0.34 + steer * 0.035, 0, 0.16, 0)
+	end
+	local passengerAvatar = renderer.car:FindFirstChild("PassengerAvatar")
+	if passengerAvatar and passengerAvatar:IsA("ImageLabel") then
+		local passengerImage = thumbnailForUserId(passengerUserIdFor(state.activeUserId.Value))
+		passengerAvatar.Image = passengerImage or ""
+		passengerAvatar.Visible = showAvatarPeople and passengerImage ~= nil
+		passengerAvatar.Position = UDim2.new(0.52 + steer * 0.035, 0, 0.16, 0)
+	end
 
 	local mph = 5 * math.round(speed / 500)
 	local driver = if state.activePlayerName.Value ~= ""
@@ -1267,6 +1330,7 @@ end
 local function renderSignature(state): string
 	return table.concat({
 		state.mode.Value,
+		tostring(state.activeUserId.Value),
 		state.activePlayerName.Value,
 		if state.trafficOffsetsBlob then state.trafficOffsetsBlob.Value else "",
 		math.floor(state.position.Value * 10 + 0.5),
