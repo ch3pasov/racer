@@ -331,7 +331,7 @@ for token in [
 	"n += 100",
 	"for _, sprite in RacerConfig.spritesForSegment(mode, segmentIndex) do",
 	"local spriteWidth = sprite.definition.width * RacerConfig.SpriteScale",
-	"local segment = RacerConfig.Tracks.final[sprite.segmentIndex + 1]",
+	"local track = RacerConfig.Tracks[mode]",
 	"segment.sprites = list",
 	"local segment = if track then track[index + 1] else nil",
 	"function RacerConfig.roadsideSpriteCenter(sprite): number",
@@ -936,10 +936,10 @@ for token in [
     "RacerConfig.roadsideCollisionSprite(mode, segmentIndex, prediction.playerX.Value)",
     "RacerConfig.trafficCollisionPosition(collisionItem.z, playerZ, trackLength)",
     "RacerConfig.roadsideCollisionSprite(\n\t\t\tsession.definition.Mode,\n\t\t\tsegmentIndex,\n\t\t\tsession.playerX\n\t\t)",
-	"local playerXLimit = if mode == \"final\" then 3 else 2",
-	"local playerXLimit = if session.definition.Mode == \"final\" then 3 else 2",
-	"if mode == \"final\" then\n\t\t\tprediction.trafficTime.Value += step\n\t\tend",
-	"if session.definition.Mode == \"final\" then\n\t\tsession.trafficTime += dt\n\tend",
+	"local playerXLimit = if RacerConfig.isFinalLike(mode) then 3 else 2",
+	"local playerXLimit = if RacerConfig.isFinalLike(session.definition.Mode) then 3 else 2",
+	"if RacerConfig.isFinalLike(mode) then\n\t\t\tprediction.trafficTime.Value += step\n\t\tend",
+	"if RacerConfig.isFinalLike(session.definition.Mode) then\n\t\tsession.trafficTime += dt\n\tend",
 ]:
     if token not in SERVER + CLIENT:
         fail(f"runtime parity token missing: {token}")
@@ -973,57 +973,57 @@ require(
 )
 
 require(
-    r'if\s+mode\s*~=\s*"final"\s*then.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*speedPercent',
+    r'if\s+not\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*speedPercent',
     CLIENT,
     "client v2/v3 background update must happen before controls using speedPercent",
 )
 require(
-    r'if\s+session\.definition\.Mode\s*~=\s*"final"\s*then.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*speedPercent',
+    r'if\s+not\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\)\s*then.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*speedPercent',
     SERVER,
     "server v2/v3 background update must happen before controls using speedPercent",
 )
 require(
-    r"prediction\.position\.Value\s*=\s*RacerMath\.increase\(.*?if\s+mode\s*~=\s*\"final\".*?if\s+pressedInputs\.left\s+then",
+    r"prediction\.position\.Value\s*=\s*RacerMath\.increase\(.*?if\s+not\s+RacerConfig\.isFinalLike\(mode\).*?if\s+pressedInputs\.left\s+then",
     CLIENT,
     "client update order must match v1-v3: position, background, then player input",
 )
 require(
-    r"session\.position\s*=\s*RacerMath\.increase\(.*?if\s+session\.definition\.Mode\s*~=\s*\"final\".*?if\s+session\.input\.left\s+then",
+    r"session\.position\s*=\s*RacerMath\.increase\(.*?if\s+not\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\).*?if\s+session\.input\.left\s+then",
     SERVER,
     "server update order must match v1-v3: position, background, then player input",
 )
 require(
-    r"RacerConfig\.trafficCollisionCar\([^\n]*.*?local\s+playerXLimit\s*=\s*if\s+mode\s*==\s*\"final\"\s*then\s*3\s*else\s*2",
+    r"RacerConfig\.trafficCollisionCar\([^\n]*.*?local\s+playerXLimit\s*=\s*if\s+RacerConfig\.isFinalLike\(mode\)\s*then\s*3\s*else\s*2",
     CLIENT,
     "client collision order must match original: traffic collision before player/speed clamp",
 )
 require(
-    r"RacerConfig\.trafficCollisionCar\([^\n]*.*?local\s+playerXLimit\s*=\s*if\s+session\.definition\.Mode\s*==\s*\"final\"\s*then\s*3\s*else\s*2",
+    r"RacerConfig\.trafficCollisionCar\([^\n]*.*?local\s+playerXLimit\s*=\s*if\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\)\s*then\s*3\s*else\s*2",
     SERVER,
     "server collision order must match original: traffic collision before player/speed clamp",
 )
 require(
-    r'if\s+mode\s*==\s*"final"\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic',
     CLIENT,
     "client traffic movement must only run in v4 final",
 )
 require(
-    r'if\s+session\.definition\.Mode\s*==\s*"final"\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic',
+    r'if\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\)\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic',
     SERVER,
     "server traffic movement must only run in v4 final",
 )
 require(
-    r'if\s+mode\s*==\s*"final"\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic.*?prediction\.trafficTime\.Value\s*\+=\s*step.*?prediction\.position\.Value\s*=\s*RacerMath\.increase',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic.*?prediction\.trafficTime\.Value\s*\+=\s*step.*?prediction\.position\.Value\s*=\s*RacerMath\.increase',
     CLIENT,
     "client v4 update order must match original: updateCars, traffic time, then position",
 )
 require(
-    r'if\s+session\.definition\.Mode\s*==\s*"final"\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic.*?session\.trafficTime\s*\+=\s*dt.*?session\.position\s*=\s*RacerMath\.increase',
+    r'if\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\)\s*then\s*trafficItems,\s*trafficBySegment\s*=\s*RacerConfig\.advanceTraffic.*?session\.trafficTime\s*\+=\s*dt.*?session\.position\s*=\s*RacerMath\.increase',
     SERVER,
     "server v4 update order must match original: updateCars, traffic time, then position",
 )
 require(
-    r'if\s+mode\s*==\s*"final"\s+and\s*\(prediction\.playerX\.Value\s*<\s*-1\s+or\s+prediction\.playerX\.Value\s*>\s*1\)\s*then\s*local\s+roadsideSprite\s*=\s*RacerConfig\.roadsideCollisionSprite\(\s*mode,\s*segmentIndex,\s*prediction\.playerX\.Value\s*\)',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s+and\s+\(prediction\.playerX\.Value\s*<\s*-1\s+or\s+prediction\.playerX\.Value\s*>\s*1\)\s*then\s*local\s+roadsideSprite\s*=\s*RacerConfig\.roadsideCollisionSprite\(\s*mode,\s*segmentIndex,\s*prediction\.playerX\.Value\s*\)',
     CLIENT,
     "client roadside collisions must use the original pre-move player segment in v4 final",
 )
@@ -1053,7 +1053,7 @@ require(
     "traffic avoidance must use the same scaled car width as traffic collision",
 )
 require(
-    r'if\s+session\.definition\.Mode\s*==\s*"final"\s+and\s*\(session\.playerX\s*<\s*-1\s+or\s+session\.playerX\s*>\s*1\)\s*then\s*local\s+roadsideSprite\s*=\s*RacerConfig\.roadsideCollisionSprite\(\s*session\.definition\.Mode,\s*segmentIndex,\s*session\.playerX\s*\)',
+    r'if\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\)\s+and\s+\(session\.playerX\s*<\s*-1\s+or\s+session\.playerX\s*>\s*1\)\s*then\s*local\s+roadsideSprite\s*=\s*RacerConfig\.roadsideCollisionSprite\(\s*session\.definition\.Mode,\s*segmentIndex,\s*session\.playerX\s*\)',
     SERVER,
     "server roadside collisions must use the original pre-move player segment in v4 final",
 )
@@ -1063,17 +1063,17 @@ require(
     "server roadside collision reset position must stop at the front of the original player segment",
 )
 require(
-    r'if\s+mode\s*==\s*"final"\s*then.*?RacerConfig\.trafficCollisionCar',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?RacerConfig\.trafficCollisionCar',
     CLIENT,
     "client traffic collision must only run in v4 final",
 )
 require(
-    r'if\s+session\.definition\.Mode\s*==\s*"final"\s*then.*?RacerConfig\.trafficCollisionCar',
+    r'if\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\)\s*then.*?RacerConfig\.trafficCollisionCar',
     SERVER,
     "server traffic collision must only run in v4 final",
 )
 require(
-    r'if\s+mode\s*==\s*"final"\s*then.*?RacerConfig\.createTrafficState\(\s*trafficTime,\s*trackLength,\s*segmentCount,\s*replicatedTrafficOffsets\(state\)\s*\).*?RacerConfig\.spritesForSegment',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?RacerConfig\.createTrafficState\(\s*trafficTime,\s*trackLength,\s*segmentCount,\s*replicatedTrafficOffsets\(state\)\s*\).*?RacerConfig\.spritesForSegment',
     CLIENT,
     "world/object rendering must rebuild v4 final traffic directly from the replicated server snapshot",
 )
@@ -1083,17 +1083,17 @@ require(
     "v4 object layering must match original: far-to-near, traffic, roadside sprites, then player at its segment",
 )
 require(
-    r'if\s+mode\s*==\s*"final"\s*then\s*renderer\.status\.Visible\s*=\s*true\s*local\s+lastLap\s*=.*?state\.lastLapTime\.Value.*?renderer\.status\.Text\s*=.*?else\s*renderer\.status\.Visible\s*=\s*false',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then\s*renderer\.status\.Visible\s*=\s*true\s*local\s+lastLap\s*=.*?state\.lastLapTime\.Value.*?renderer\.status\.Text\s*=.*?else\s*renderer\.status\.Visible\s*=\s*false',
     CLIENT,
     "v4 final must render current/last/best lap HUD, and v1-v3 must not render a HUD/status overlay",
 )
 require(
-    r'if\s+mode\s*==\s*"final"\s*then.*?local\s+positionDelta.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*positionDelta',
+    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?local\s+positionDelta.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*positionDelta',
     CLIENT,
     "client v4 background update must use position delta after collisions",
 )
 require(
-    r'if\s+session\.definition\.Mode\s*==\s*"final"\s*then.*?local\s+positionDelta.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*positionDelta',
+    r'if\s+RacerConfig\.isFinalLike\(session\.definition\.Mode\)\s*then.*?local\s+positionDelta.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*positionDelta',
     SERVER,
     "server v4 background update must use position delta after collisions",
 )
@@ -1157,7 +1157,7 @@ for token in [
 	"local frontFacing = not RacerConfig.Modes[mode].hills or p2.y < p1.y",
 	"if p1 and p2 then",
 	"p1.cameraZ > cameraDepth and frontFacing and p2.y < maxY",
-	"maxY = if mode == \"final\" then p1.y else p2.y",
+	"maxY = if RacerConfig.isFinalLike(mode) then p1.y else p2.y",
 	"playerProjected.p1.cameraY",
 	"ROAD_SCANLINE_HEIGHT = 2",
 	"local heightScale = math.max(1 / HEIGHT, bottom - top)",

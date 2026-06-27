@@ -156,7 +156,7 @@ local function copyPredictedState(source)
 	local trafficOffsets = cloneTrafficOffsets(replicatedTrafficOffsets(source))
 	local mode = source.mode.Value
 	local trafficState = nil
-	if mode == "final" then
+	if RacerConfig.isFinalLike(mode) then
 		local trackLength = RacerConfig.trackLength(mode)
 		local segmentCount = RacerConfig.segmentCount(mode)
 		trafficState = RacerConfig.createTrafficState(
@@ -234,7 +234,7 @@ local function updatePredictedState(source, dt: number)
 		local trafficItems = nil
 		local trafficBySegment = nil
 
-		if mode == "final" then
+		if RacerConfig.isFinalLike(mode) then
 			trafficItems, trafficBySegment = RacerConfig.advanceTraffic(
 				prediction.trafficOffsets,
 				prediction.trafficTime.Value,
@@ -252,7 +252,7 @@ local function updatePredictedState(source, dt: number)
 			prediction.trafficBySegment = nil
 		end
 
-		if mode == "final" then
+		if RacerConfig.isFinalLike(mode) then
 			prediction.trafficTime.Value += step
 		end
 		prediction.position.Value = RacerMath.increase(
@@ -260,7 +260,7 @@ local function updatePredictedState(source, dt: number)
 			step * prediction.speed.Value,
 			trackLength
 		)
-		if mode ~= "final" then
+		if not RacerConfig.isFinalLike(mode) then
 			prediction.skyOffset.Value = RacerMath.increase(
 				prediction.skyOffset.Value,
 				BACKGROUND_SPEEDS.Sky * curve * speedPercent,
@@ -307,7 +307,7 @@ local function updatePredictedState(source, dt: number)
 				RacerMath.accelerate(prediction.speed.Value, RacerConfig.OffRoadDecel, step)
 		end
 
-		if mode == "final" and (prediction.playerX.Value < -1 or prediction.playerX.Value > 1) then
+		if RacerConfig.isFinalLike(mode) and (prediction.playerX.Value < -1 or prediction.playerX.Value > 1) then
 			local roadsideSprite =
 				RacerConfig.roadsideCollisionSprite(mode, segmentIndex, prediction.playerX.Value)
 			if roadsideSprite then
@@ -317,7 +317,7 @@ local function updatePredictedState(source, dt: number)
 			end
 		end
 
-		if mode == "final" then
+		if RacerConfig.isFinalLike(mode) then
 			local collisionItem = RacerConfig.trafficCollisionCar(
 				trafficItems,
 				segmentIndex,
@@ -335,12 +335,12 @@ local function updatePredictedState(source, dt: number)
 			end
 		end
 
-		local playerXLimit = if mode == "final" then 3 else 2
+		local playerXLimit = if RacerConfig.isFinalLike(mode) then 3 else 2
 		prediction.playerX.Value =
 			RacerMath.limit(prediction.playerX.Value, -playerXLimit, playerXLimit)
 		prediction.speed.Value = RacerMath.limit(prediction.speed.Value, 0, RacerConfig.MaxSpeed)
 
-		if mode == "final" then
+		if RacerConfig.isFinalLike(mode) then
 			local positionDelta = (prediction.position.Value - startPosition)
 				/ RacerConfig.SegmentLength
 			prediction.skyOffset.Value = RacerMath.increase(
@@ -360,7 +360,7 @@ local function updatePredictedState(source, dt: number)
 			)
 		end
 
-		if mode == "final" and prediction.position.Value > playerZ then
+		if RacerConfig.isFinalLike(mode) and prediction.position.Value > playerZ then
 			if prediction.lapStarted and startPosition < playerZ then
 				prediction.lastLapTime.Value = prediction.currentLapTime.Value
 				prediction.currentLapTime.Value = 0
@@ -1056,7 +1056,7 @@ local function render(renderer, state)
 					)
 					scanY = nextY
 				end
-				maxY = if mode == "final" then p1.y else p2.y
+				maxY = if RacerConfig.isFinalLike(mode) then p1.y else p2.y
 			end
 		end
 		if rowPoolExhausted then
@@ -1067,7 +1067,7 @@ local function render(renderer, state)
 	local objectCursor = 0
 	local drawLayer = 0
 	local playerDrawZIndex = PLAYER_CAR_Z_INDEX
-	if mode == "final" then
+	if RacerConfig.isFinalLike(mode) then
 		local orderedTrafficBySegment = state.trafficBySegment
 		local trafficItems = nil
 		if orderedTrafficBySegment == nil then
@@ -1250,7 +1250,7 @@ local function render(renderer, state)
 	local driver = if state.activePlayerName.Value ~= ""
 		then state.activePlayerName.Value
 		else "No driver"
-	if mode == "final" then
+	if RacerConfig.isFinalLike(mode) then
 		renderer.status.Visible = true
 		local lastLap = if state.lastLapTime.Value > 0
 			then ` | last {formatTime(state.lastLapTime.Value)}`
@@ -1606,7 +1606,7 @@ task.spawn(function()
 					surfaceGui,
 					`WorldScreen_{definition.Id}`,
 					0.84,
-					definition.Mode == "final"
+					RacerConfig.isFinalLike(definition.Mode)
 				),
 				screenPart = screenPart,
 				surfaceGui = surfaceGui,

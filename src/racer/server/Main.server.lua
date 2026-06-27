@@ -332,7 +332,7 @@ local function publishState(session)
 	session.values.Position.Value = session.position
 	session.values.Speed.Value = session.speed
 	session.values.TrafficTime.Value = session.trafficTime
-	session.values.TrafficOffsets.Value = if session.definition.Mode == "final"
+	session.values.TrafficOffsets.Value = if RacerConfig.isFinalLike(session.definition.Mode)
 		then RacerConfig.packTrafficOffsets(session.trafficOffsets)
 		else ""
 	session.values.CurrentLapTime.Value = session.currentLapTime
@@ -357,7 +357,7 @@ local function resetRun(session)
 	session.skyOffset = 0
 	session.hillOffset = 0
 	session.treeOffset = 0
-	if session.definition.Mode == "final" then
+	if RacerConfig.isFinalLike(session.definition.Mode) then
 		session.trafficOffsets = RacerConfig.baseTrafficOffsets()
 		session.trafficState = RacerConfig.createTrafficState(
 			0,
@@ -663,7 +663,7 @@ local function updateRacer(session, dt: number)
 	local trafficItems = nil
 	local trafficBySegment = nil
 
-	if session.definition.Mode == "final" then
+	if RacerConfig.isFinalLike(session.definition.Mode) then
 		trafficItems, trafficBySegment = RacerConfig.advanceTraffic(
 			session.trafficOffsets,
 			session.trafficTime,
@@ -678,11 +678,11 @@ local function updateRacer(session, dt: number)
 		)
 	end
 
-	if session.definition.Mode == "final" then
+	if RacerConfig.isFinalLike(session.definition.Mode) then
 		session.trafficTime += dt
 	end
 	session.position = RacerMath.increase(session.position, dt * session.speed, trackLength)
-	if session.definition.Mode ~= "final" then
+	if not RacerConfig.isFinalLike(session.definition.Mode) then
 		session.skyOffset =
 			RacerMath.increase(session.skyOffset, BACKGROUND_SPEEDS.Sky * curve * speedPercent, 1)
 		session.hillOffset =
@@ -716,7 +716,7 @@ local function updateRacer(session, dt: number)
 		session.speed = RacerMath.accelerate(session.speed, RacerConfig.OffRoadDecel, dt)
 	end
 
-	if session.definition.Mode == "final" and (session.playerX < -1 or session.playerX > 1) then
+	if RacerConfig.isFinalLike(session.definition.Mode) and (session.playerX < -1 or session.playerX > 1) then
 		local roadsideSprite = RacerConfig.roadsideCollisionSprite(
 			session.definition.Mode,
 			segmentIndex,
@@ -729,7 +729,7 @@ local function updateRacer(session, dt: number)
 		end
 	end
 
-	if session.definition.Mode == "final" then
+	if RacerConfig.isFinalLike(session.definition.Mode) then
 		local collisionItem = RacerConfig.trafficCollisionCar(
 			trafficItems,
 			segmentIndex,
@@ -746,11 +746,11 @@ local function updateRacer(session, dt: number)
 		end
 	end
 
-	local playerXLimit = if session.definition.Mode == "final" then 3 else 2
+	local playerXLimit = if RacerConfig.isFinalLike(session.definition.Mode) then 3 else 2
 	session.playerX = RacerMath.limit(session.playerX, -playerXLimit, playerXLimit)
 	session.speed = RacerMath.limit(session.speed, 0, RacerConfig.MaxSpeed)
 
-	if session.definition.Mode == "final" then
+	if RacerConfig.isFinalLike(session.definition.Mode) then
 		local positionDelta = (session.position - startPosition) / RacerConfig.SegmentLength
 		session.skyOffset =
 			RacerMath.increase(session.skyOffset, BACKGROUND_SPEEDS.Sky * curve * positionDelta, 1)
@@ -766,7 +766,7 @@ local function updateRacer(session, dt: number)
 		)
 	end
 
-	if session.definition.Mode == "final" and session.position > playerZ then
+	if RacerConfig.isFinalLike(session.definition.Mode) and session.position > playerZ then
 		if session.lapStarted and startPosition < playerZ then
 			session.lastLapTime = session.currentLapTime
 			session.currentLapTime = 0

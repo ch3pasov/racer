@@ -51,7 +51,21 @@ RacerConfig.Modes = {
 		laps = true,
 		hud = true,
 	},
+	v5 = {
+		curves = true,
+		hills = true,
+		sprites = true,
+		traffic = true,
+		laps = true,
+		hud = true,
+		v5 = true,
+	},
 }
+
+function RacerConfig.isFinalLike(mode: string): boolean
+	local definition = RacerConfig.Modes[mode]
+	return definition ~= nil and definition.traffic == true and definition.laps == true
+end
 
 RacerConfig.Screens = {
 	{
@@ -81,6 +95,13 @@ RacerConfig.Screens = {
 		Mode = "final",
 		Position = Vector3.new(54, 0, -24),
 		Color = Color3.fromRGB(255, 116, 128),
+	},
+	{
+		Id = "v5",
+		Name = "v5 Lab",
+		Mode = "v5",
+		Position = Vector3.new(0, 0, 8),
+		Color = Color3.fromRGB(134, 240, 150),
 	},
 }
 
@@ -622,6 +643,7 @@ RacerConfig.Tracks = {
 	curves = buildCurvesTrack(),
 	hills = buildHillsTrack(),
 	final = buildFinalTrack(),
+	v5 = buildFinalTrack(),
 }
 
 function RacerConfig.buildTraffic(mode: string, seed: number?)
@@ -725,9 +747,11 @@ end
 RacerConfig.Traffic.Cars = RacerConfig.buildTraffic("final", 1701)
 RacerConfig.SpriteObjects = {
 	final = RacerConfig.buildSpriteObjects("final", 2401),
+	v5 = RacerConfig.buildSpriteObjects("v5", 2401),
 }
 RacerConfig.SpritesBySegment = {
 	final = {},
+	v5 = {},
 }
 
 function RacerConfig.segmentCount(mode: string): number
@@ -741,19 +765,21 @@ end
 
 RacerConfig.TrackLength = RacerConfig.trackLength("straight")
 
-for _, sprite in RacerConfig.SpriteObjects.final do
-	local segment = RacerConfig.Tracks.final[sprite.segmentIndex + 1]
-	local list = if segment
-		then segment.sprites
-		else RacerConfig.SpritesBySegment.final[sprite.segmentIndex]
-	if not list then
-		list = {}
+for mode, sprites in RacerConfig.SpriteObjects do
+	for _, sprite in sprites do
+		local track = RacerConfig.Tracks[mode]
+		local segment = if track then track[sprite.segmentIndex + 1] else nil
+		local bySegment = RacerConfig.SpritesBySegment[mode]
+		local list = if segment then segment.sprites else bySegment[sprite.segmentIndex]
+		if not list then
+			list = {}
+		end
+		table.insert(list, sprite)
+		if segment then
+			segment.sprites = list
+		end
+		bySegment[sprite.segmentIndex] = list
 	end
-	table.insert(list, sprite)
-	if segment then
-		segment.sprites = list
-	end
-	RacerConfig.SpritesBySegment.final[sprite.segmentIndex] = list
 end
 
 function RacerConfig.maxSpriteObjectsInDrawWindow(mode: string, drawDistance: number): number
