@@ -1,4 +1,6 @@
 local Lighting = game:GetService("Lighting")
+local DataStoreService = game:GetService("DataStoreService")
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -157,6 +159,37 @@ local BACKGROUND_SPEEDS = {
 
 local sessions = {}
 local perfLines = {}
+local v5LeaderboardLabels = {}
+local v5GlobalStore = DataStoreService:GetOrderedDataStore("RacerV5GlobalLapMsV1")
+local v5PersonalStore = DataStoreService:GetDataStore("RacerV5PersonalRunsV1")
+
+local function formatLapTime(seconds: number): string
+	local minutes = math.floor(seconds / 60)
+	local remaining = seconds - minutes * 60
+	return string.format("%d:%05.2f", minutes, remaining)
+end
+
+local function leaderboardEmpty(title: string): string
+	return `{title}\n--`
+end
+
+local function formatLeaderboard(title: string, rows): string
+	if not rows or #rows == 0 then
+		return leaderboardEmpty(title)
+	end
+	local lines = { title }
+	for index, row in ipairs(rows) do
+		table.insert(lines, `{index}. {row.name}  {formatLapTime(row.time)}`)
+	end
+	return table.concat(lines, "\n")
+end
+
+local function setV5LeaderboardText(kind: string, text: string)
+	local label = v5LeaderboardLabels[kind]
+	if label then
+		label.Text = text
+	end
+end
 
 local function createValue(parent: Instance, className: string, name: string, initialValue)
 	local item = Instance.new(className)
@@ -385,6 +418,156 @@ local function findPlayerSession(player: Player)
 	return nil
 end
 
+local function decodePersonalRuns(raw)
+	if typeof(raw) ~= "string" or raw == "" then
+		return {}
+	end
+	local ok, decoded = pcall(function()
+		return HttpService:JSONDecode(raw)
+	end)
+	return if ok and typeof(decoded) == "table" then decoded else {}
+end
+
+local function playerNameForUserId(userId: number): string
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		return player.DisplayName
+	end
+	local ok, name = pcall(function()
+		return Players:GetNameFromUserIdAsync(userId)
+	end)
+	return if ok then name else tostring(userId)
+end
+
+local function readPersonalTop(player: Player)
+	local ok, raw = pcall(function()
+		return v5PersonalStore:GetAsync(tostring(player.UserId))
+	end)
+	if not ok then
+		return {}
+	end
+	local runs = decodePersonalRuns(raw)
+	table.sort(runs, function(left, right)
+		return (left.time or math.huge) < (right.time or math.huge)
+	end)
+	while #runs > 10 do
+		table.remove(runs)
+	end
+	for _, row in runs do
+		row.name = "You"
+	end
+	return runs
+end
+
+local function readGlobalTop(limit: number)
+	local ok, pages = pcall(function()
+		return v5GlobalStore:GetSortedAsync(true, limit)
+	end)
+	if not ok then
+		return {}
+	end
+	local rows = {}
+	for _, entry in pages:GetCurrentPage() do
+		local userId = tonumber(entry.key) or 0
+		table.insert(rows, {
+			userId = userId,
+			name = playerNameForUserId(userId),
+			time = (entry.value or 0) / 1000,
+		})
+	end
+	return rows
+end
+
+local function friendIdSet(player: Player)
+	local ids = {}
+	local ok, pages = pcall(function()
+		return Players:GetFriendsAsync(player.UserId)
+	end)
+	if not ok then
+		return ids
+	end
+	while true do
+		for _, friend in pages:GetCurrentPage() do
+			ids[friend.Id] = true
+		end
+		if pages.IsFinished then
+			break
+		end
+		local advanceOk = pcall(function()
+			pages:AdvanceToNextPageAsync()
+		end)
+		if not advanceOk then
+			break
+		end
+	end
+	return ids
+end
+
+local function refreshV5Leaderboards(player: Player?)
+	if not player then
+		setV5LeaderboardText("self", leaderboardEmpty("v5 Your Top 10"))
+		setV5LeaderboardText("friends", leaderboardEmpty("v5 Friends Top 10"))
+		setV5LeaderboardText("global", formatLeaderboard("v5 Global Top 10", readGlobalTop(10)))
+		return
+	end
+
+	task.spawn(function()
+		local selfRows = readPersonalTop(player)
+		local globalRows = readGlobalTop(100)
+		local friendIds = friendIdSet(player)
+		local friendRows = {}
+		for _, row in globalRows do
+			if friendIds[row.userId] then
+				table.insert(friendRows, row)
+				if #friendRows >= 10 then
+					break
+				end
+			end
+		end
+		local globalTopTen = {}
+		for index = 1, math.min(10, #globalRows) do
+			table.insert(globalTopTen, globalRows[index])
+		end
+		setV5LeaderboardText("self", formatLeaderboard("v5 Your Top 10", selfRows))
+		setV5LeaderboardText("friends", formatLeaderboard("v5 Friends Top 10", friendRows))
+		setV5LeaderboardText("global", formatLeaderboard("v5 Global Top 10", globalTopTen))
+	end)
+end
+
+local function recordV5Lap(session, player: Player, lapTime: number)
+	if session.definition.Mode ~= "v5" or lapTime <= 0 then
+		return
+	end
+	local lapMs = math.floor(lapTime * 1000 + 0.5)
+	task.spawn(function()
+		pcall(function()
+			v5GlobalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
+				if typeof(oldValue) == "number" and oldValue > 0 and oldValue <= lapMs then
+					return oldValue
+				end
+				return lapMs
+			end)
+		end)
+		pcall(function()
+			v5PersonalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
+				local runs = decodePersonalRuns(oldValue)
+				table.insert(runs, {
+					time = lapTime,
+					at = os.time(),
+				})
+				table.sort(runs, function(left, right)
+					return (left.time or math.huge) < (right.time or math.huge)
+				end)
+				while #runs > 10 do
+					table.remove(runs)
+				end
+				return HttpService:JSONEncode(runs)
+			end)
+		end)
+		refreshV5Leaderboards(player)
+	end)
+end
+
 local function exitScreen(player: Player, message: string?)
 	local session = findPlayerSession(player)
 	if not session then
@@ -398,6 +581,9 @@ local function exitScreen(player: Player, message: string?)
 	session.activePlayer = nil
 	resetRun(session)
 	session.values.Status.Value = message or `{session.definition.Name} ready.`
+	if session.definition.Mode == "v5" then
+		refreshV5Leaderboards(nil)
+	end
 	actionEvent:FireClient(player, "Exited")
 end
 
@@ -450,6 +636,9 @@ local function enterScreen(player: Player, screenId: string)
 	player:SetAttribute("RacerScreenId", session.definition.Id)
 	session.values.Status.Value = `{player.DisplayName} is playing {session.definition.Name}.`
 	publishState(session)
+	if session.definition.Mode == "v5" then
+		refreshV5Leaderboards(player)
+	end
 	actionEvent:FireClient(player, "Entered", session.definition.Name)
 end
 
@@ -605,6 +794,60 @@ local function createVersionBadge()
 	padding.Parent = label
 end
 
+local function createV5LeaderboardBoard(
+	kind: string,
+	title: string,
+	position: Vector3,
+	color: Color3
+)
+	local board = createPart(
+		`V5Leaderboard_{kind}`,
+		Vector3.new(14, 8, 0.3),
+		CFrame.new(position) * CFrame.Angles(0, math.rad(180), 0),
+		Color3.fromRGB(12, 16, 24),
+		world,
+		Enum.Material.SmoothPlastic
+	)
+	board.CanCollide = false
+
+	local surfaceGui = Instance.new("SurfaceGui")
+	surfaceGui.Name = `V5LeaderboardGui_{kind}`
+	surfaceGui.Face = Enum.NormalId.Front
+	surfaceGui.LightInfluence = 0
+	surfaceGui.PixelsPerStud = 28
+	surfaceGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	surfaceGui.Parent = board
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
+	label.BackgroundTransparency = 0
+	label.BorderSizePixel = 0
+	label.Font = Enum.Font.GothamBold
+	label.Size = UDim2.fromScale(1, 1)
+	label.Text = leaderboardEmpty(title)
+	label.TextColor3 = color
+	label.TextScaled = true
+	label.TextWrapped = true
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextYAlignment = Enum.TextYAlignment.Top
+	label.Parent = surfaceGui
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingBottom = UDim.new(0, 10)
+	padding.PaddingLeft = UDim.new(0, 12)
+	padding.PaddingRight = UDim.new(0, 12)
+	padding.PaddingTop = UDim.new(0, 10)
+	padding.Parent = label
+
+	v5LeaderboardLabels[kind] = label
+end
+
+local function createV5Leaderboards()
+	createV5LeaderboardBoard("self", "v5 Your Top 10", Vector3.new(-24, 5.2, 18), Color3.fromRGB(236, 240, 244))
+	createV5LeaderboardBoard("friends", "v5 Friends Top 10", Vector3.new(0, 5.2, 18), Color3.fromRGB(134, 240, 150))
+	createV5LeaderboardBoard("global", "v5 Global Top 10", Vector3.new(24, 5.2, 18), Color3.fromRGB(255, 221, 78))
+end
+
 local function buildLab()
 	world:ClearAllChildren()
 
@@ -641,6 +884,7 @@ local function buildLab()
 	end
 	createLobbyPortal()
 	createVersionBadge()
+	createV5Leaderboards()
 end
 
 local function updateRacer(session, dt: number)
@@ -773,6 +1017,7 @@ local function updateRacer(session, dt: number)
 			if session.lastLapTime <= session.fastLapTime then
 				session.fastLapTime = session.lastLapTime
 			end
+			recordV5Lap(session, session.activePlayer, session.lastLapTime)
 		else
 			session.lapStarted = true
 			session.currentLapTime += dt
@@ -906,6 +1151,9 @@ Players.PlayerRemoving:Connect(function(player)
 		session.activePlayer = nil
 		resetRun(session)
 		session.values.Status.Value = `{session.definition.Name} ready.`
+		if session.definition.Mode == "v5" then
+			refreshV5Leaderboards(nil)
+		end
 	end
 end)
 
@@ -924,6 +1172,7 @@ task.spawn(function()
 end)
 
 buildLab()
+refreshV5Leaderboards(nil)
 for _, session in sessions do
 	publishState(session)
 end
