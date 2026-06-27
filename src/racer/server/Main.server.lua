@@ -134,6 +134,11 @@ perfHistory.Name = "History"
 perfHistory.Value = ""
 perfHistory.Parent = perfFolder
 
+local v5BillboardText = Instance.new("StringValue")
+v5BillboardText.Name = "RacerV5BillboardText"
+v5BillboardText.Value = ""
+v5BillboardText.Parent = ReplicatedStorage
+
 local SPAWN_CFRAME = CFrame.new(0, 4, 22)
 local LOBBY_PLACE_ID = GeneratedPlaceIds.LobbyPlaceId or 0
 local RACER_PLACE_ID = if GeneratedPlaceIds.RacerPlaceId and GeneratedPlaceIds.RacerPlaceId > 0
@@ -189,6 +194,13 @@ local function setV5LeaderboardText(kind: string, text: string)
 	if label then
 		label.Text = text
 	end
+end
+
+local function setV5BillboardTop(rows)
+	local top = rows and rows[1]
+	v5BillboardText.Value = if top
+		then `#1 {top.name} {formatLapTime(top.time)}`
+		else ""
 end
 
 local function createValue(parent: Instance, className: string, name: string, initialValue)
@@ -505,9 +517,11 @@ end
 
 local function refreshV5Leaderboards(player: Player?)
 	if not player then
+		local globalRows = readGlobalTop(10)
 		setV5LeaderboardText("self", leaderboardEmpty("v5 Your Top 10"))
 		setV5LeaderboardText("friends", leaderboardEmpty("v5 Friends Top 10"))
-		setV5LeaderboardText("global", formatLeaderboard("v5 Global Top 10", readGlobalTop(10)))
+		setV5LeaderboardText("global", formatLeaderboard("v5 Global Top 10", globalRows))
+		setV5BillboardTop(globalRows)
 		return
 	end
 
@@ -531,6 +545,7 @@ local function refreshV5Leaderboards(player: Player?)
 		setV5LeaderboardText("self", formatLeaderboard("v5 Your Top 10", selfRows))
 		setV5LeaderboardText("friends", formatLeaderboard("v5 Friends Top 10", friendRows))
 		setV5LeaderboardText("global", formatLeaderboard("v5 Global Top 10", globalTopTen))
+		setV5BillboardTop(globalTopTen)
 	end)
 end
 

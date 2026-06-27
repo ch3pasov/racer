@@ -15,6 +15,7 @@ local player = Players.LocalPlayer
 local actionEvent = ReplicatedStorage:WaitForChild("RacerAction")
 local inputEvent = ReplicatedStorage:WaitForChild("RacerInput")
 local perfLogEvent = ReplicatedStorage:WaitForChild("RacerPerfLog")
+local v5BillboardText = ReplicatedStorage:WaitForChild("RacerV5BillboardText") :: StringValue
 local statesFolder = ReplicatedStorage:WaitForChild("RacerStates")
 
 local WIDTH = RacerConfig.Width
@@ -693,6 +694,20 @@ local function createRenderer(
 			rounded(content, 2)
 			createTextureImage(content, 765)
 
+			local liveText = Instance.new("TextLabel")
+			liveText.Name = "LiveBillboardText"
+			liveText.BackgroundTransparency = 1
+			liveText.Font = Enum.Font.GothamBold
+			liveText.Position = UDim2.new(0.1, 0, 0.2, 0)
+			liveText.Size = UDim2.new(0.8, 0, 0.42, 0)
+			liveText.Text = ""
+			liveText.TextColor3 = Color3.fromRGB(14, 18, 24)
+			liveText.TextScaled = true
+			liveText.TextWrapped = true
+			liveText.Visible = false
+			liveText.ZIndex = 766
+			liveText.Parent = content
+
 			local shadow = createFrame(content, "Shadow", Color3.fromRGB(13, 17, 20), 759)
 			shadow.AnchorPoint = Vector2.new(0.5, 1)
 			shadow.BackgroundTransparency = 0.35
@@ -820,7 +835,7 @@ local function setPlayerCarZIndex(car: GuiObject, zIndex: number)
 	end
 end
 
-local function setSpriteObject(object, spriteData)
+local function setSpriteObject(object, spriteData, mode: string)
 	hideObjectDetails(object)
 	local content = object:FindFirstChild("Content")
 	local detailRoot = if content and content:IsA("GuiObject") then content else object
@@ -839,6 +854,16 @@ local function setSpriteObject(object, spriteData)
 		if texture and texture:IsA("GuiObject") then
 			texture.Visible = false
 		end
+	end
+	local liveText = detailRoot:FindFirstChild("LiveBillboardText")
+	if liveText and liveText:IsA("TextLabel") then
+		local liveCopy = v5BillboardText.Value
+		local showLive = mode == "v5"
+			and spriteData.definition.kind == "billboard"
+			and liveCopy ~= ""
+		liveText.Text = liveCopy
+		liveText.Visible = showLive
+		liveText.ZIndex = object.ZIndex + 1
 	end
 end
 
@@ -1229,7 +1254,7 @@ local function render(renderer, state)
 				local width, height =
 					spriteSizeScale(spriteDef.width, spriteDef.height, scale, roadWidthSetting)
 				object.ZIndex = objectZIndex(drawLayer)
-				setSpriteObject(object, spriteData)
+				setSpriteObject(object, spriteData, mode)
 				if placeClippedObject(object, spriteX, spriteY, width, height, projected.clip) then
 					drawLayer += 1
 					objectCursor = nextCursor
@@ -1348,6 +1373,7 @@ local function renderSignature(state): string
 		state.settingFogDensity.Value,
 		state.settingLanes.Value,
 		if textureArtEnabled() then "textures" else "placeholders",
+		v5BillboardText.Value,
 		math.floor(state.currentLapTime.Value * 10 + 0.5),
 		math.floor(state.lastLapTime.Value * 10 + 0.5),
 		math.floor(state.fastLapTime.Value * 10 + 0.5),
