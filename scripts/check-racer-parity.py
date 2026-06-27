@@ -105,7 +105,7 @@ texture_asset = re.search(r'Image\s*=\s*"rbxassetid://(\d+)"', TEXTURES)
 if not texture_asset:
     fail("RacerTextures.Image must point at an uploaded Roblox image asset")
 
-texture_png = ROOT / "assets/racer/textures/racer-sprites-v1.png"
+texture_png = ROOT / "assets/racer/textures/racer-sprites-v2.png"
 if not texture_png.exists():
     fail("local racer texture atlas must exist")
 texture_width, texture_height, texture_rows = read_png_rgba(texture_png)
@@ -157,6 +157,9 @@ expected_sprites = {
     "PLAYER_LEFT": (80, 41),
     "PLAYER_STRAIGHT": (80, 41),
     "PLAYER_RIGHT": (80, 41),
+    "PLAYER_DOWNHILL_LEFT": (80, 41),
+    "PLAYER_DOWNHILL_STRAIGHT": (80, 41),
+    "PLAYER_DOWNHILL_RIGHT": (80, 41),
 }
 
 for name, (width, height) in expected_sprites.items():
@@ -345,6 +348,9 @@ for token in [
 	"PLAYER_UPHILL_LEFT",
 	"PLAYER_UPHILL_RIGHT",
 	"PLAYER_UPHILL_STRAIGHT",
+	"PLAYER_DOWNHILL_LEFT",
+	"PLAYER_DOWNHILL_RIGHT",
+	"PLAYER_DOWNHILL_STRAIGHT",
 	"PLAYER_STRAIGHT",
 	"segmentIndex * RacerConfig.SegmentLength",
 	"return RacerMath.increase(trafficZ, -playerZ, trackLength)",
