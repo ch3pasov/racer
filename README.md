@@ -17,6 +17,8 @@ repositories.
   Cloud.
 - `scripts/lookup-place-version.sh` maps a Roblox place version back to the git
   commit tagged during publish.
+- `scripts/read-roblox-server-logs.py` reads live server logs through Roblox
+  Open Cloud Server Management.
 
 ## Required Secrets For Publishing
 
@@ -33,6 +35,23 @@ to the lobby.
 
 The API key should be an Open Cloud key with only the permissions needed to
 create place versions for this Racer Lab place.
+
+## Reading Live Server Logs
+
+Do not put the Open Cloud key in Roblox client code, LocalScripts, frontend
+code, or committed files. Keep it in the server-side environment:
+
+```sh
+export ROBLOX_API_KEY="..."
+export ROBLOX_UNIVERSE_ID="..."
+export ROBLOX_RACER_PLACE_ID="..."
+export ROBLOX_VERSION_NUMBER="189"
+
+scripts/read-roblox-server-logs.py --warnings-and-errors --pretty
+```
+
+The key must have read access to the target universe and Server Management read
+operations, including listing game servers and listing game server logs.
 
 ## Bootstrap Limitation
 
