@@ -27,6 +27,13 @@
   publish embeds the commit in build metadata and records the Roblox
   `PlaceVersion` to commit mapping; after publishing, verify that the published
   version can be looked up by version number.
+- When debugging Roblox runtime errors or warnings, use the backend-only Open
+  Cloud log reader before asking the user for screenshots: load secrets from the
+  local server environment, then run `scripts/read-roblox-server-logs.py` for
+  the relevant Roblox place version. Never put or print `ROBLOX_API_KEY` in
+  Roblox client/server game code, frontend code, committed files, or chat. This
+  tool reads live game server logs; historical Creator Dashboard analytics may
+  still need separate dashboard/API access.
 - When a requested task has been implemented and local checks pass, publish the
   Racer Lab place if the publish environment is available. Do not wait for a
   separate publish request unless there is a concrete blocker or the user asks
