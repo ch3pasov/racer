@@ -1022,22 +1022,22 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 		configurePart(
 			trunk :: GuiObject?,
 			color,
-			UDim2.fromScale(0.34, 0.14),
-			UDim2.fromScale(0.32, 0.78),
+			UDim2.fromScale(0.42, 0.12),
+			UDim2.fromScale(0.16, 0.78),
 			zIndex
 		)
 		configurePart(
 			canopy :: GuiObject?,
 			color,
-			UDim2.fromScale(0.2, 0.0),
-			UDim2.fromScale(0.6, 0.18),
+			UDim2.fromScale(0.28, 0.0),
+			UDim2.fromScale(0.44, 0.16),
 			zIndex + 1
 		)
 		configurePart(
 			body :: GuiObject?,
 			color:Lerp(Color3.fromRGB(255, 255, 255), 0.12),
-			UDim2.fromScale(0.2, 0.88),
-			UDim2.fromScale(0.6, 0.12),
+			UDim2.fromScale(0.28, 0.86),
+			UDim2.fromScale(0.44, 0.14),
 			zIndex + 1
 		)
 	else
@@ -1098,7 +1098,9 @@ local function setTrafficObject(object, car)
 	local hasTexture = textureArtEnabled() and applyTextureImage(texture, car.sprite)
 	for _, child in detailRoot:GetChildren() do
 		if child:IsA("GuiObject") and child.Name ~= "Texture" then
-			child.Visible = not hasTexture
+			local isSpriteOnly = string.sub(child.Name, 1, 6) == "Sprite"
+				or child.Name == "LiveBillboardText"
+			child.Visible = not hasTexture and not isSpriteOnly
 		end
 	end
 	if hasTexture then

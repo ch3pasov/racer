@@ -1250,6 +1250,7 @@ for token in [
     'if kind == "billboard" then',
     "detailRoot.BackgroundTransparency = 1",
     'child.Visible = not isSpritePlaceholder and child.Name ~= "LiveBillboardText"',
+    "child.Visible = not hasTexture and not isSpriteOnly",
     'elseif kind == "rock" then',
     'elseif kind == "column" then',
 ]:
