@@ -125,10 +125,6 @@ local perfLogEvent = Instance.new("RemoteEvent")
 perfLogEvent.Name = "RacerPerfLog"
 perfLogEvent.Parent = ReplicatedStorage
 
-local clientLogEvent = Instance.new("RemoteEvent")
-clientLogEvent.Name = "RacerClientLog"
-clientLogEvent.Parent = ReplicatedStorage
-
 local statesFolder = Instance.new("Folder")
 statesFolder.Name = "RacerStates"
 statesFolder.Parent = ReplicatedStorage
@@ -146,25 +142,6 @@ local perfHistory = Instance.new("StringValue")
 perfHistory.Name = "History"
 perfHistory.Value = ""
 perfHistory.Parent = perfFolder
-
-local clientLogsFolder = Instance.new("Folder")
-clientLogsFolder.Name = "RacerClientLogs"
-clientLogsFolder.Parent = ReplicatedStorage
-
-local latestClientLog = Instance.new("StringValue")
-latestClientLog.Name = "Latest"
-latestClientLog.Value = ""
-latestClientLog.Parent = clientLogsFolder
-
-local clientLogHistory = Instance.new("StringValue")
-clientLogHistory.Name = "History"
-clientLogHistory.Value = ""
-clientLogHistory.Parent = clientLogsFolder
-
-local clientLogCount = Instance.new("IntValue")
-clientLogCount.Name = "Count"
-clientLogCount.Value = 0
-clientLogCount.Parent = clientLogsFolder
 
 local v5BillboardText = Instance.new("StringValue")
 v5BillboardText.Name = "RacerV5BillboardText"
@@ -196,7 +173,6 @@ local BACKGROUND_SPEEDS = {
 
 local sessions = {}
 local perfLines = {}
-local clientLogLines = {}
 local v5LeaderboardLabels = {}
 local v5GlobalStore = DataStoreService:GetOrderedDataStore("RacerV5GlobalLapMsV1")
 local v5PersonalStore = DataStoreService:GetDataStore("RacerV5PersonalRunsV1")
@@ -1169,38 +1145,6 @@ perfLogEvent.OnServerEvent:Connect(function(player: Player, message: string)
 	perfHistory.Value = table.concat(perfLines, "\n")
 	print(`[RacerPerf] {line}`)
 end)
-
-clientLogEvent.OnServerEvent:Connect(
-	function(
-		player: Player,
-		messageType: string,
-		message: string,
-		screenId: string?,
-		mode: string?,
-		activity: string?
-	)
-		if typeof(messageType) ~= "string" or typeof(message) ~= "string" then
-			return
-		end
-
-		local safeType = string.sub(messageType, 1, 40)
-		local safeMessage = string.gsub(string.sub(message, 1, 700), "\n", " / ")
-		local safeScreenId = if typeof(screenId) == "string" then string.sub(screenId, 1, 30) else "-"
-		local safeMode = if typeof(mode) == "string" then string.sub(mode, 1, 30) else "-"
-		local safeActivity = if typeof(activity) == "string" then string.sub(activity, 1, 30) else "-"
-		local commit = ReplicatedStorage:GetAttribute("RacerGitCommitShort") or "local"
-		local version = if game.PlaceVersion > 0 then tostring(game.PlaceVersion) else RacerConfig.VersionBuild
-		local line = `{os.date("!%H:%M:%S")} v{version}@{commit} {player.Name} {safeActivity}/{safeScreenId}/{safeMode} {safeType}: {safeMessage}`
-		table.insert(clientLogLines, line)
-		while #clientLogLines > 80 do
-			table.remove(clientLogLines, 1)
-		end
-		clientLogCount.Value += 1
-		latestClientLog.Value = line
-		clientLogHistory.Value = table.concat(clientLogLines, "\n")
-		warn(`[RacerClientLog] {line}`)
-	end
-)
 
 actionEvent.OnServerEvent:Connect(
 	function(player: Player, actionName: string, settingName: string?, direction: number?)

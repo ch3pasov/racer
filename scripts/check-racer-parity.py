@@ -1343,30 +1343,12 @@ for token in [
 
 for token in [
     'local LogService = game:GetService("LogService")',
-    'local clientLogEvent = ReplicatedStorage:WaitForChild("RacerClientLog")',
-    "local CLIENT_LOG_MIN_INTERVAL = 0.2",
-    "local function shouldForwardClientLog(message: string, messageType: Enum.MessageType): boolean",
-    "Enum.MessageType.MessageWarning",
-    "Enum.MessageType.MessageError",
-    'string.find(message, "[RacerPerf]", 1, true)',
-    "LogService.MessageOut:Connect(function(message: string, messageType: Enum.MessageType)",
-    "clientLogEvent:FireServer(",
+    'RacerClientLog',
+    'RacerClientLogs',
+    "LogService.MessageOut:Connect(",
 ]:
-    if token not in CLIENT:
-        fail(f"client warning/error telemetry must be forwarded to the server: {token}")
-
-for token in [
-    'clientLogEvent.Name = "RacerClientLog"',
-    'clientLogsFolder.Name = "RacerClientLogs"',
-    'latestClientLog.Name = "Latest"',
-    'clientLogHistory.Name = "History"',
-    'clientLogCount.Name = "Count"',
-    "local clientLogLines = {}",
-    "clientLogEvent.OnServerEvent:Connect(",
-    'warn(`[RacerClientLog] {line}`)',
-]:
-    if token not in SERVER:
-        fail(f"server must retain recent client warning/error telemetry: {token}")
+    if token in CLIENT or token in SERVER:
+        fail(f"custom client warning/error telemetry bridge must remain removed: {token}")
 
 for token in [
     'player:GetAttribute("Activity") ~= "RacerScreen"',
