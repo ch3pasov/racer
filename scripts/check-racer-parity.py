@@ -1106,9 +1106,9 @@ require(
     "v4 object layering must match original: far-to-near, traffic, roadside sprites, then player at its segment",
 )
 require(
-    r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then\s*renderer\.status\.Visible\s*=\s*true\s*local\s+lastLap\s*=.*?state\.lastLapTime\.Value.*?renderer\.status\.Text\s*=.*?else\s*renderer\.status\.Visible\s*=\s*false',
+    r'status\.Visible\s*=\s*false.*?if\s+RacerConfig\.isFinalLike\(mode\)\s*then\s*renderer\.status\.Visible\s*=\s*true\s*renderer\.status\.Text\s*=.*?\{mph\}\s+mph\s+Time:\s+.*?Last Lap:\s+.*?Fastest Lap:.*?else\s*renderer\.status\.Text\s*=\s*""\s*renderer\.status\.Visible\s*=\s*false',
     CLIENT,
-    "v4 final must render current/last/best lap HUD, and v1-v3 must not render a HUD/status overlay",
+    "v4 final must render the original mph/time/last/fastest HUD, and v1-v3 must not render a HUD/status overlay",
 )
 require(
     r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?local\s+positionDelta.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*positionDelta',

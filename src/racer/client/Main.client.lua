@@ -807,6 +807,7 @@ local function createRenderer(
 	local status =
 		createLabel(root, "Status", UDim2.new(0.5, -320, 0, 12), UDim2.fromOffset(640, 42), 15)
 	status.ZIndex = OVERLAY_Z_INDEX + 10
+	status.Visible = false
 
 	return {
 		root = root,
@@ -1374,19 +1375,16 @@ local function render(renderer, state)
 	end
 
 	local mph = 5 * math.round(speed / 500)
-	local driver = if state.activePlayerName.Value ~= ""
-		then state.activePlayerName.Value
-		else "No driver"
 	if RacerConfig.isFinalLike(mode) then
 		renderer.status.Visible = true
-		local lastLap = if state.lastLapTime.Value > 0
-			then ` | last {formatTime(state.lastLapTime.Value)}`
-			else ""
 		renderer.status.Text =
-			`{mph} mph | lap {formatTime(state.currentLapTime.Value)}{lastLap} | best {formatTime(
+			`{mph} mph Time: {formatTime(state.currentLapTime.Value)} Last Lap: {formatTime(
+				state.lastLapTime.Value
+			)} Fastest Lap: {formatTime(
 				state.fastLapTime.Value
-			)} | {driver}`
+			)}`
 	else
+		renderer.status.Text = ""
 		renderer.status.Visible = false
 	end
 end
