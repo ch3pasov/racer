@@ -18,6 +18,18 @@ local RacerConfig = {
 	FogDensity = 5,
 }
 
+local function derive(base, overrides)
+	local result = table.clone(base)
+	for key, value in overrides do
+		result[key] = value
+	end
+	return result
+end
+
+local function shallowArrayCopy(items)
+	return table.clone(items)
+end
+
 RacerConfig.Modes = {
 	straight = {
 		curves = false,
@@ -51,16 +63,10 @@ RacerConfig.Modes = {
 		laps = true,
 		hud = true,
 	},
-	v5 = {
-		curves = true,
-		hills = true,
-		sprites = true,
-		traffic = true,
-		laps = true,
-		hud = true,
-		v5 = true,
-	},
 }
+RacerConfig.Modes.v5 = derive(RacerConfig.Modes.final, {
+	v5 = true,
+})
 
 function RacerConfig.isFinalLike(mode: string): boolean
 	local definition = RacerConfig.Modes[mode]
@@ -674,12 +680,13 @@ local function buildFinalTrack()
 	return track
 end
 
+local finalTrack = buildFinalTrack()
 RacerConfig.Tracks = {
 	straight = buildStraightTrack(),
 	curves = buildCurvesTrack(),
 	hills = buildHillsTrack(),
-	final = buildFinalTrack(),
-	v5 = buildFinalTrack(),
+	final = finalTrack,
+	v5 = finalTrack,
 }
 
 RacerConfig.V5Junctions = {
@@ -806,10 +813,11 @@ function RacerConfig.buildSpriteObjects(mode: string, seed: number?)
 	return buildSpriteObjectsForTrack(mode, seed)
 end
 
+local finalSpriteObjects = RacerConfig.buildSpriteObjects("final", 2401)
 RacerConfig.Traffic.Cars = RacerConfig.buildTraffic("final", 1701)
 RacerConfig.SpriteObjects = {
-	final = RacerConfig.buildSpriteObjects("final", 2401),
-	v5 = RacerConfig.buildSpriteObjects("v5", 2401),
+	final = finalSpriteObjects,
+	v5 = shallowArrayCopy(finalSpriteObjects),
 }
 RacerConfig.SpritesBySegment = {
 	final = {},
@@ -829,17 +837,12 @@ RacerConfig.TrackLength = RacerConfig.trackLength("straight")
 
 for mode, sprites in RacerConfig.SpriteObjects do
 	for _, sprite in sprites do
-		local track = RacerConfig.Tracks[mode]
-		local segment = if track then track[sprite.segmentIndex + 1] else nil
 		local bySegment = RacerConfig.SpritesBySegment[mode]
-		local list = if segment then segment.sprites else bySegment[sprite.segmentIndex]
+		local list = bySegment[sprite.segmentIndex]
 		if not list then
 			list = {}
 		end
 		table.insert(list, sprite)
-		if segment then
-			segment.sprites = list
-		end
 		bySegment[sprite.segmentIndex] = list
 	end
 end
@@ -870,11 +873,6 @@ function RacerConfig.spriteObjectsFor(mode: string)
 end
 
 function RacerConfig.spritesForSegment(mode: string, index: number)
-	local track = RacerConfig.Tracks[mode]
-	local segment = if track then track[index + 1] else nil
-	if segment and segment.sprites then
-		return segment.sprites
-	end
 	local bySegment = RacerConfig.SpritesBySegment[mode]
 	return if bySegment then bySegment[index] or {} else {}
 end

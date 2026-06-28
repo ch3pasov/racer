@@ -280,7 +280,11 @@ expected_mode_flags = {
 
 for mode, expected_flags in expected_mode_flags.items():
     require(rf"{mode}\s*=\s*\{{", CONFIG, f"missing mode flags for {mode}")
-    require(rf"{mode}\s*=\s*build", CONFIG, f"missing track for {mode}")
+    if mode == "final":
+        require(r"local\s+finalTrack\s*=\s*buildFinalTrack\(\)", CONFIG, "missing inherited final track source")
+        require(r"final\s*=\s*finalTrack", CONFIG, "missing final track assignment")
+    else:
+        require(rf"{mode}\s*=\s*build", CONFIG, f"missing track for {mode}")
     mode_match = re.search(rf"\n\t{mode}\s*=\s*\{{(.*?)\n\t\}},", CONFIG, re.DOTALL)
     if not mode_match:
         fail(f"could not parse mode flags for {mode}")
@@ -291,6 +295,15 @@ for mode, expected_flags in expected_mode_flags.items():
     for flag, expected in expected_flags.items():
         if actual_flags.get(flag) is not expected:
             fail(f"{mode}.{flag} must be {expected} to match v1-v4 feature rollout")
+
+for token in [
+    "RacerConfig.Modes.v5 = derive(RacerConfig.Modes.final",
+    "v5 = finalTrack",
+    "local finalSpriteObjects = RacerConfig.buildSpriteObjects(\"final\", 2401)",
+    "v5 = shallowArrayCopy(finalSpriteObjects)",
+]:
+    if token not in CONFIG:
+        fail(f"v5 must explicitly inherit v4 final before adding v5-only behavior: {token}")
 
 for token in [
     "addStraight(track, ROAD.LENGTH.SHORT)",
@@ -340,8 +353,7 @@ for token in [
 	"for _, sprite in RacerConfig.spritesForSegment(mode, segmentIndex) do",
 	"local spriteWidth = sprite.definition.width * RacerConfig.SpriteScale",
 	"local track = RacerConfig.Tracks[mode]",
-	"segment.sprites = list",
-	"local segment = if track then track[index + 1] else nil",
+	"local bySegment = RacerConfig.SpritesBySegment[mode]",
 	"function RacerConfig.roadsideSpriteCenter(sprite): number",
 	"local spriteCenter = RacerConfig.roadsideSpriteCenter(sprite)",
 	"RacerMath.overlap(playerX, playerWidth, spriteCenter, spriteWidth)",
