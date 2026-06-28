@@ -1139,6 +1139,9 @@ for token in [
 if "state.trafficOffsets" not in CLIENT:
     fail("fullscreen render must use predicted traffic offsets for collision/render parity")
 
+if "activeUserId = source.activeUserId" not in CLIENT:
+    fail("active player prediction must keep activeUserId for avatar/HUD rendering")
+
 require(
     r"if\s+state\.trafficOffsets\s+then\s*local\s+trafficState\s*=\s*RacerConfig\.createTrafficState\(\s*trafficTime,\s*trackLength,\s*segmentCount,\s*state\.trafficOffsets,\s*mode\s*\)\s*trafficItems\s*=\s*trafficState\.items\s*orderedTrafficBySegment\s*=\s*trafficState\.bySegment",
     CLIENT,
@@ -1311,10 +1314,14 @@ for token in [
 
 for token in [
     "local playerGui = player:WaitForChild(\"PlayerGui\")",
+    "local racerGuiMarkerNames = {",
+    "local function removeForeignRacerGuiFor(instance: Instance)",
     "local function removeForeignRacerHuds()",
     "if child.Name == \"RacerHud\" and child ~= screenGui then",
     "playerGui.ChildAdded:Connect(function(child)",
+    "playerGui.DescendantAdded:Connect(function(descendant)",
     "removeForeignRacerHuds()",
+    "layers:{layerCount}/{foreignLayerCount}",
     "local latestPerfSummary = \"waiting for perf sample\"",
     "perfLabel.ZIndex = OVERLAY_Z_INDEX + 100",
     "if inputObject.KeyCode == Enum.KeyCode.F6 then\n\t\tperfLabel.Visible = not perfLabel.Visible\n\t\treturn\n\tend\n\tif gameProcessed then",

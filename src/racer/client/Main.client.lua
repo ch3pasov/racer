@@ -210,6 +210,7 @@ local function copyPredictedState(source)
 	end
 	return {
 		id = source.id,
+		activeUserId = source.activeUserId,
 		activePlayerName = source.activePlayerName,
 		position = valueProxy(source.position.Value),
 		speed = valueProxy(source.speed.Value),
@@ -1446,6 +1447,45 @@ end
 
 local playerGui = player:WaitForChild("PlayerGui")
 local screenGui: ScreenGui? = nil
+local racerGuiMarkerNames = {
+	ActiveStatus = true,
+	ExitButton = true,
+	FullScreenRacer = true,
+	RacerViewport = true,
+	RejoinButton = true,
+	SettingsButton = true,
+}
+
+local function isCurrentRacerGui(instance: Instance): boolean
+	return screenGui ~= nil and (instance == screenGui or instance:IsDescendantOf(screenGui))
+end
+
+local function playerGuiChildFor(instance: Instance): Instance?
+	local current = instance
+	while current.Parent and current.Parent ~= playerGui do
+		current = current.Parent
+	end
+	return if current.Parent == playerGui then current else nil
+end
+
+local function removeForeignRacerGuiFor(instance: Instance)
+	if screenGui and screenGui.Parent ~= playerGui then
+		return
+	end
+	if isCurrentRacerGui(instance) then
+		return
+	end
+	if instance.Name == "RacerHud" and instance.Parent == playerGui then
+		instance:Destroy()
+		return
+	end
+	if racerGuiMarkerNames[instance.Name] then
+		local root = playerGuiChildFor(instance)
+		if root and root ~= screenGui then
+			root:Destroy()
+		end
+	end
+end
 
 local function removeForeignRacerHuds()
 	if screenGui and screenGui.Parent ~= playerGui then
@@ -1455,6 +1495,9 @@ local function removeForeignRacerHuds()
 		if child.Name == "RacerHud" and child ~= screenGui then
 			child:Destroy()
 		end
+	end
+	for _, descendant in playerGui:GetDescendants() do
+		removeForeignRacerGuiFor(descendant)
 	end
 end
 
@@ -1468,12 +1511,11 @@ screenGui.Parent = playerGui
 removeForeignRacerHuds()
 
 playerGui.ChildAdded:Connect(function(child)
-	if screenGui and screenGui.Parent ~= playerGui then
-		return
-	end
-	if child.Name == "RacerHud" and child ~= screenGui then
-		child:Destroy()
-	end
+	removeForeignRacerGuiFor(child)
+end)
+
+playerGui.DescendantAdded:Connect(function(descendant)
+	removeForeignRacerGuiFor(descendant)
 end)
 
 local title =
@@ -2224,6 +2266,8 @@ end
 local function hudDebugText(): string
 	local hudCount = 0
 	local foreignCount = 0
+	local layerCount = 0
+	local foreignLayerCount = 0
 	for _, child in playerGui:GetChildren() do
 		if child.Name == "RacerHud" then
 			hudCount += 1
@@ -2232,7 +2276,15 @@ local function hudDebugText(): string
 			end
 		end
 	end
-	return `attrs:{player:GetAttribute("Activity") or "-"}:{player:GetAttribute("RacerScreenId") or "-"} hud:{hudCount}/{foreignCount} full:{fullScreen.Visible}`
+	for _, descendant in playerGui:GetDescendants() do
+		if racerGuiMarkerNames[descendant.Name] then
+			layerCount += 1
+			if not isCurrentRacerGui(descendant) then
+				foreignLayerCount += 1
+			end
+		end
+	end
+	return `attrs:{player:GetAttribute("Activity") or "-"}:{player:GetAttribute("RacerScreenId") or "-"} hud:{hudCount}/{foreignCount} layers:{layerCount}/{foreignLayerCount} full:{fullScreen.Visible}`
 end
 
 local function activeDebugText(state): string
