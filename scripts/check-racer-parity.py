@@ -1105,11 +1105,19 @@ require(
     CLIENT,
     "v4 object layering must match original: far-to-near, traffic, roadside sprites, then player at its segment",
 )
-require(
-    r'status\.Visible\s*=\s*false.*?if\s+RacerConfig\.isFinalLike\(mode\)\s*then\s*renderer\.status\.Visible\s*=\s*true\s*renderer\.status\.Text\s*=.*?\{mph\}\s+mph\s+Time:\s+.*?Last Lap:\s+.*?Fastest Lap:.*?else\s*renderer\.status\.Text\s*=\s*""\s*renderer\.status\.Visible\s*=\s*false',
-    CLIENT,
-    "v4 final must render the original mph/time/last/fastest HUD, and v1-v3 must not render a HUD/status overlay",
-)
+for token in [
+    "status.Visible = false",
+    "local function finalHudText(state, speed: number): string",
+    "{mph} mph Time:",
+    "Last Lap:",
+    "Fastest Lap:",
+    "if RacerConfig.isFinalLike(mode) and renderer.statusEnabled ~= false then",
+    "renderer.status.Text = finalHudText(state, speed)",
+    "renderer.status.Text = \"\"",
+    "renderer.status.Visible = false",
+]:
+    if token not in CLIENT:
+        fail(f"v4 final must render the original mph/time/last/fastest HUD, and v1-v3 must not render a HUD/status overlay: {token}")
 require(
     r'if\s+RacerConfig\.isFinalLike\(mode\)\s*then.*?local\s+positionDelta.*?BACKGROUND_SPEEDS\.Sky\s*\*\s*curve\s*\*\s*positionDelta',
     CLIENT,
@@ -1239,7 +1247,15 @@ for forbidden in [
 if "local FINAL_OBJECT_COUNT = RacerConfig.FinalObjectCount" not in CLIENT:
     fail("object pool must be derived from v4 traffic + max visible sprite placeholders")
 
-if "local LOCAL_STATUS_TOP = 64" not in CLIENT or "fullRenderer.status.Position = UDim2.new(0.5, -320, 0, LOCAL_STATUS_TOP)" not in CLIENT:
-    fail("active player v4+ HUD must be moved below the Roblox topbar while world screens keep their cabinet HUD position")
+for token in [
+    "local ACTIVE_STATUS_TOP = 18",
+    "fullRenderer.statusEnabled = false",
+    "createLabel(fullScreen, \"ActiveStatus\"",
+    "local function updateActiveStatus(state)",
+    "activeStatus.Text = finalHudText(state, state.speed.Value)",
+    "updateActiveStatus(renderState)",
+]:
+    if token not in CLIENT:
+        fail(f"active player v4+ HUD must be a fullscreen overlay below the Roblox topbar: {token}")
 
 print("Racer parity checks passed")

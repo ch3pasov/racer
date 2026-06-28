@@ -24,7 +24,7 @@ local ROW_COUNT = RacerConfig.MaxDrawDistance
 local ROAD_SCANLINE_HEIGHT = 2
 local CONTROL_ACTION = "RacerScreenControls"
 local OVERLAY_Z_INDEX = 10000
-local LOCAL_STATUS_TOP = 64
+local ACTIVE_STATUS_TOP = 18
 local ROAD_Z_INDEX = 20
 local ROAD_DETAIL_Z_INDEX = ROAD_Z_INDEX + 1
 local ROAD_LANE_Z_INDEX = ROAD_Z_INDEX + 2
@@ -436,6 +436,15 @@ local function formatTime(seconds: number): string
 	return `{wholeSeconds}.{tenths}`
 end
 
+local function finalHudText(state, speed: number): string
+	local mph = 5 * math.round(speed / 500)
+	return `{mph} mph Time: {formatTime(state.currentLapTime.Value)} Last Lap: {formatTime(
+		state.lastLapTime.Value
+	)} Fastest Lap: {formatTime(
+		state.fastLapTime.Value
+	)}`
+end
+
 local function rounded(instance: GuiObject, radius: number)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, radius)
@@ -824,6 +833,7 @@ local function createRenderer(
 		car = car,
 		carBottom = carBottom or 0.93,
 		status = status,
+		statusEnabled = true,
 	}
 end
 
@@ -1375,15 +1385,9 @@ local function render(renderer, state)
 		passengerAvatar.Position = UDim2.new(0.52 + steer * 0.035, 0, 0.16, 0)
 	end
 
-	local mph = 5 * math.round(speed / 500)
-	if RacerConfig.isFinalLike(mode) then
+	if RacerConfig.isFinalLike(mode) and renderer.statusEnabled ~= false then
 		renderer.status.Visible = true
-		renderer.status.Text =
-			`{mph} mph Time: {formatTime(state.currentLapTime.Value)} Last Lap: {formatTime(
-				state.lastLapTime.Value
-			)} Fastest Lap: {formatTime(
-				state.fastLapTime.Value
-			)}`
+		renderer.status.Text = finalHudText(state, speed)
 	else
 		renderer.status.Text = ""
 		renderer.status.Visible = false
@@ -1518,8 +1522,24 @@ task.defer(updateFullViewportSize)
 local fullRenderer = createRenderer(fullViewport, "LocalScreen")
 fullRenderer.root.ZIndex = 201
 fullRenderer.root.Size = UDim2.new(1, 0, 1, 0)
-fullRenderer.status.Position = UDim2.new(0.5, -320, 0, LOCAL_STATUS_TOP)
+fullRenderer.statusEnabled = false
+
+local activeStatus =
+	createLabel(fullScreen, "ActiveStatus", UDim2.new(0.5, 0, 0, ACTIVE_STATUS_TOP), UDim2.fromOffset(640, 42), 15)
+activeStatus.AnchorPoint = Vector2.new(0.5, 0)
+activeStatus.Visible = false
+activeStatus.ZIndex = 255
 local worldRenderers = {}
+
+local function updateActiveStatus(state)
+	if state and RacerConfig.isFinalLike(state.mode.Value) then
+		activeStatus.Text = finalHudText(state, state.speed.Value)
+		activeStatus.Visible = true
+	else
+		activeStatus.Text = ""
+		activeStatus.Visible = false
+	end
+end
 
 local exitButton = Instance.new("TextButton")
 exitButton.Name = "ExitButton"
@@ -1925,10 +1945,12 @@ local function updateHud()
 	if active then
 		bindRacerControls()
 		updateSettingLabels()
+		updateActiveStatus(state)
 		return
 	end
 	settingsPanel.Visible = false
 	settingsButton.Text = "Settings"
+	updateActiveStatus(nil)
 	unbindRacerControls()
 	hint.Text = anyBusyStatus() or "Walk to a screen and press E."
 end
@@ -2061,6 +2083,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		local fullRenderStart = os.clock()
 		local renderState = updatePredictedState(state, deltaTime)
 		render(fullRenderer, renderState)
+		updateActiveStatus(renderState)
 		perfStats.fullRenderTime += os.clock() - fullRenderStart
 		perfStats.fullRenderCount += 1
 		perfStats.lastFullObjects = fullRenderer.lastObjectCount or 0
@@ -2071,6 +2094,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 			updateSettingLabels()
 		end
 	else
+		updateActiveStatus(nil)
 		predictedState = nil
 		predictedSourceId = nil
 		perfStats.lastFullObjects = 0
