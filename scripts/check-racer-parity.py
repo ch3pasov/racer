@@ -1311,6 +1311,8 @@ for token in [
 
 for token in [
     "local latestPerfSummary = \"waiting for perf sample\"",
+    "perfLabel.ZIndex = OVERLAY_Z_INDEX + 100",
+    "if inputObject.KeyCode == Enum.KeyCode.F6 then\n\t\tperfLabel.Visible = not perfLabel.Visible\n\t\treturn\n\tend\n\tif gameProcessed then",
     "local function inputDebugFlags(source): string",
     "local function racerStateDebugText(label: string, state): string",
     "local function focusDebugText(): string",

@@ -1458,6 +1458,7 @@ local perfLabel =
 perfLabel.BackgroundTransparency = 0.18
 perfLabel.TextXAlignment = Enum.TextXAlignment.Left
 perfLabel.TextYAlignment = Enum.TextYAlignment.Top
+perfLabel.ZIndex = OVERLAY_Z_INDEX + 100
 perfLabel.Visible = false
 perfLabel.Text = "Perf log enabled. Press F6 to hide."
 
@@ -1480,11 +1481,12 @@ labRejoinButton.MouseButton1Click:Connect(function()
 end)
 
 UserInputService.InputBegan:Connect(function(inputObject, gameProcessed)
-	if gameProcessed then
-		return
-	end
 	if inputObject.KeyCode == Enum.KeyCode.F6 then
 		perfLabel.Visible = not perfLabel.Visible
+		return
+	end
+	if gameProcessed then
+		return
 	end
 end)
 
