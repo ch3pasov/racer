@@ -24,6 +24,7 @@ local ROW_COUNT = RacerConfig.MaxDrawDistance
 local ROAD_SCANLINE_HEIGHT = 2
 local CONTROL_ACTION = "RacerScreenControls"
 local OVERLAY_Z_INDEX = 10000
+local LOCAL_STATUS_TOP = 64
 local ROAD_Z_INDEX = 20
 local ROAD_DETAIL_Z_INDEX = ROAD_Z_INDEX + 1
 local ROAD_LANE_Z_INDEX = ROAD_Z_INDEX + 2
@@ -1517,6 +1518,7 @@ task.defer(updateFullViewportSize)
 local fullRenderer = createRenderer(fullViewport, "LocalScreen")
 fullRenderer.root.ZIndex = 201
 fullRenderer.root.Size = UDim2.new(1, 0, 1, 0)
+fullRenderer.status.Position = UDim2.new(0.5, -320, 0, LOCAL_STATUS_TOP)
 local worldRenderers = {}
 
 local exitButton = Instance.new("TextButton")

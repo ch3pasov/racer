@@ -1239,4 +1239,7 @@ for forbidden in [
 if "local FINAL_OBJECT_COUNT = RacerConfig.FinalObjectCount" not in CLIENT:
     fail("object pool must be derived from v4 traffic + max visible sprite placeholders")
 
+if "local LOCAL_STATUS_TOP = 64" not in CLIENT or "fullRenderer.status.Position = UDim2.new(0.5, -320, 0, LOCAL_STATUS_TOP)" not in CLIENT:
+    fail("active player v4+ HUD must be moved below the Roblox topbar while world screens keep their cabinet HUD position")
+
 print("Racer parity checks passed")
