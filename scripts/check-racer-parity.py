@@ -1071,6 +1071,16 @@ require(
     "roadside rendering and collision must share the same sprite center formula",
 )
 require(
+    r'local\s+hitboxWidth\s*=\s*width\s*\*\s*RacerConfig\.Traffic\.CollisionOverlap.*?placeClippedObject\(object,\s*x,\s*y,\s*width,\s*height,\s*projected\.clip,\s*hitboxWidth\)',
+    CLIENT,
+    "debug traffic hitbox outlines must use the original NPC collision overlap window",
+)
+require(
+    r"placeClippedObject\(object,\s*spriteX,\s*spriteY,\s*width,\s*height,\s*projected\.clip,\s*width\)",
+    CLIENT,
+    "debug roadside hitbox outlines must use the original full sprite collision window",
+)
+require(
     r"function\s+RacerConfig\.trafficOffsetDelta\(.*?local\s+carWidth\s*=\s*item\.width.*?RacerMath\.overlap\(\s*playerX,\s*RacerConfig\.Traffic\.PlayerWidth,\s*item\.offset,\s*carWidth,\s*1\.2",
     CONFIG,
     "traffic avoidance must use the same scaled car width as traffic collision",
@@ -1260,6 +1270,17 @@ for token in [
 
 if CLIENT.count('elseif spriteData.sprite == "PALM_TREE" then') != 1:
     fail("placeholder roadside sprites must have exactly one PALM_TREE branch")
+
+for token in [
+    "local useHitboxDebug = false",
+    'hitbox.Name = "Hitbox"',
+    "hitbox.BackgroundTransparency = 1",
+    "hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border",
+    'hitboxToggleLabel.Text = `{if useHitboxDebug and available then "[x]" else "[ ]"} Hitboxes`',
+    "not state or not RacerConfig.isFinalLike(state.mode.Value)",
+]:
+    if token not in CLIENT:
+        fail(f"optional v4 hitbox debug outlines missing token: {token}")
 
 for forbidden in [
     "if child.Name == \"Shadow\" then object.ZIndex - 1 else object.ZIndex + 1",

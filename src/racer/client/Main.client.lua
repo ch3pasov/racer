@@ -53,6 +53,7 @@ local BACKGROUND_SPEEDS = {
 }
 
 local useTextureArt = true
+local useHitboxDebug = false
 local avatarImageCache = {}
 
 local keyMap = {
@@ -747,6 +748,25 @@ local function createRenderer(
 			rounded(content, 2)
 			createTextureImage(content, 765)
 
+			local hitbox = Instance.new("Frame")
+			hitbox.Name = "Hitbox"
+			hitbox.AnchorPoint = Vector2.new(0, 0)
+			hitbox.BackgroundTransparency = 1
+			hitbox.BorderSizePixel = 0
+			hitbox.Position = UDim2.fromScale(0, 0)
+			hitbox.Size = UDim2.fromScale(1, 1)
+			hitbox.Visible = false
+			hitbox.ZIndex = 768
+			hitbox.Parent = object
+
+			local hitboxStroke = Instance.new("UIStroke")
+			hitboxStroke.Name = "Outline"
+			hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+			hitboxStroke.Color = Color3.fromRGB(255, 56, 56)
+			hitboxStroke.LineJoinMode = Enum.LineJoinMode.Miter
+			hitboxStroke.Thickness = 1
+			hitboxStroke.Parent = hitbox
+
 			local spriteCanopy = createFrame(content, "SpriteCanopy", Color3.fromRGB(20, 112, 36), 762)
 			spriteCanopy.Visible = false
 			rounded(spriteCanopy, 8)
@@ -1132,7 +1152,8 @@ local function placeClippedObject(
 	bottomY: number,
 	widthScale: number,
 	heightScale: number,
-	clipY: number
+	clipY: number,
+	hitboxWidthScale: number?
 ): boolean
 	local widthPx = widthScale * WIDTH
 	local heightPx = heightScale * HEIGHT
@@ -1165,6 +1186,22 @@ local function placeClippedObject(
 			(topY - visibleTopY) / visibleHeight
 		)
 		detailRoot.Size = UDim2.fromScale(widthPx / visibleWidth, heightPx / visibleHeight)
+	end
+	local hitbox = object:FindFirstChild("Hitbox")
+	if hitbox and hitbox:IsA("GuiObject") then
+		if hitboxWidthScale and useHitboxDebug then
+			local hitboxWidthPx = hitboxWidthScale * WIDTH
+			local hitboxLeftX = x - hitboxWidthPx / 2
+			hitbox.Position = UDim2.fromScale(
+				(hitboxLeftX - visibleLeftX) / visibleWidth,
+				(topY - visibleTopY) / visibleHeight
+			)
+			hitbox.Size = UDim2.fromScale(hitboxWidthPx / visibleWidth, heightPx / visibleHeight)
+			hitbox.ZIndex = object.ZIndex + 3
+			hitbox.Visible = true
+		else
+			hitbox.Visible = false
+		end
 	end
 	object.Visible = true
 	return true
@@ -1465,7 +1502,8 @@ local function render(renderer, state)
 						spriteSizeScale(carData.width, carData.height, scale, roadWidthSetting)
 					object.ZIndex = objectZIndex(drawLayer)
 					setTrafficObject(object, carData)
-					if placeClippedObject(object, x, y, width, height, projected.clip) then
+					local hitboxWidth = width * RacerConfig.Traffic.CollisionOverlap
+					if placeClippedObject(object, x, y, width, height, projected.clip, hitboxWidth) then
 						drawLayer += 1
 						objectCursor = nextCursor
 					end
@@ -1492,7 +1530,7 @@ local function render(renderer, state)
 					spriteSizeScale(spriteDef.width, spriteDef.height, scale, roadWidthSetting)
 				object.ZIndex = objectZIndex(drawLayer)
 				setSpriteObject(object, spriteData, mode)
-				if placeClippedObject(object, spriteX, spriteY, width, height, projected.clip) then
+				if placeClippedObject(object, spriteX, spriteY, width, height, projected.clip, width) then
 					drawLayer += 1
 					objectCursor = nextCursor
 				end
@@ -1601,6 +1639,7 @@ local function renderSignature(state): string
 		state.settingFogDensity.Value,
 		state.settingLanes.Value,
 		if textureArtEnabled() then "textures" else "placeholders",
+		if useHitboxDebug then "hitboxes" else "no-hitboxes",
 		v5BillboardText.Value,
 		math.floor(state.currentLapTime.Value * 10 + 0.5),
 		math.floor(state.lastLapTime.Value * 10 + 0.5),
@@ -1925,7 +1964,7 @@ settingsPanel.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
 settingsPanel.BackgroundTransparency = 0.08
 settingsPanel.BorderSizePixel = 0
 settingsPanel.Position = UDim2.new(1, -18, 0, 114)
-settingsPanel.Size = UDim2.fromOffset(238, 350)
+settingsPanel.Size = UDim2.fromOffset(238, 390)
 settingsPanel.Visible = false
 settingsPanel.ZIndex = 260
 settingsPanel.Parent = fullScreen
@@ -1973,6 +2012,7 @@ local settingRows = {
 }
 
 local textureToggleLabel: TextButton? = nil
+local hitboxToggleLabel: TextButton? = nil
 
 local function currentSettingText(row): string
 	local state = activeState()
@@ -2031,6 +2071,14 @@ local function updateSettingLabels()
 			then Color3.fromRGB(255, 255, 255)
 			else Color3.fromRGB(150, 156, 164)
 	end
+	if hitboxToggleLabel then
+		local state = activeState()
+		local available = state ~= nil and RacerConfig.isFinalLike(state.mode.Value)
+		hitboxToggleLabel.Text = `{if useHitboxDebug and available then "[x]" else "[ ]"} Hitboxes`
+		hitboxToggleLabel.TextColor3 = if available
+			then Color3.fromRGB(255, 255, 255)
+			else Color3.fromRGB(150, 156, 164)
+	end
 end
 
 textureToggleLabel = makeButton(
@@ -2049,8 +2097,29 @@ textureToggleLabel.MouseButton1Click:Connect(function()
 	updateSettingLabels()
 end)
 
+hitboxToggleLabel = makeButton(
+	settingsPanel,
+	"[ ] Hitboxes",
+	UDim2.fromOffset(12, 286),
+	UDim2.new(1, -24, 0, 32)
+)
+hitboxToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+hitboxToggleLabel.MouseButton1Click:Connect(function()
+	local state = activeState()
+	if not state or not RacerConfig.isFinalLike(state.mode.Value) then
+		updateSettingLabels()
+		return
+	end
+	useHitboxDebug = not useHitboxDebug
+	fullRenderer.lastSignature = nil
+	for _, entry in worldRenderers do
+		entry.renderer.lastSignature = nil
+	end
+	updateSettingLabels()
+end)
+
 local resetButton =
-	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 296), UDim2.new(1, -24, 0, 36))
+	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 334), UDim2.new(1, -24, 0, 36))
 resetButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("ResetSettings")
 end)
