@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ContextActionService = game:GetService("ContextActionService")
 local GuiService = game:GetService("GuiService")
+local LogService = game:GetService("LogService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
@@ -16,6 +17,7 @@ local player = Players.LocalPlayer
 local actionEvent = ReplicatedStorage:WaitForChild("RacerAction")
 local inputEvent = ReplicatedStorage:WaitForChild("RacerInput")
 local perfLogEvent = ReplicatedStorage:WaitForChild("RacerPerfLog")
+local clientLogEvent = ReplicatedStorage:WaitForChild("RacerClientLog")
 local v5BillboardText = ReplicatedStorage:WaitForChild("RacerV5BillboardText") :: StringValue
 local statesFolder = ReplicatedStorage:WaitForChild("RacerStates")
 
@@ -36,6 +38,7 @@ local WORLD_RENDER_INTERVAL = 1 / 20
 local WORLD_SCREEN_MAX_DISTANCE = 185
 local SETTINGS_LABEL_INTERVAL = 0.2
 local PERF_LOG_INTERVAL = 5
+local CLIENT_LOG_MIN_INTERVAL = 0.2
 local OBJECT_Z_STRIDE = 4
 local STUTTER_FRAME_TIME = 1 / 30
 local SEVERE_STUTTER_FRAME_TIME = 1 / 15
@@ -131,6 +134,37 @@ local function activeState()
 	end
 	return states[screenId]
 end
+
+local lastForwardedClientLogAt = 0
+
+local function shouldForwardClientLog(message: string, messageType: Enum.MessageType): boolean
+	if messageType ~= Enum.MessageType.MessageWarning and messageType ~= Enum.MessageType.MessageError then
+		return false
+	end
+	if string.find(message, "[RacerPerf]", 1, true) or string.find(message, "[RacerClientLog]", 1, true) then
+		return false
+	end
+	return true
+end
+
+LogService.MessageOut:Connect(function(message: string, messageType: Enum.MessageType)
+	if not shouldForwardClientLog(message, messageType) then
+		return
+	end
+	local now = os.clock()
+	if now - lastForwardedClientLogAt < CLIENT_LOG_MIN_INTERVAL then
+		return
+	end
+	lastForwardedClientLogAt = now
+	local state = activeState()
+	clientLogEvent:FireServer(
+		tostring(messageType),
+		message,
+		if state then state.id else "",
+		if state then state.mode.Value else "",
+		tostring(player:GetAttribute("Activity") or "")
+	)
+end)
 
 local function thumbnailForUserId(userId: number): string?
 	if userId <= 0 then
