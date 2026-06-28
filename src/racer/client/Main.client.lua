@@ -540,6 +540,28 @@ local function createTextureImage(parent: Instance, zIndex: number)
 	return image
 end
 
+local function createHitboxOutline(parent: Instance, zIndex: number)
+	local hitbox = Instance.new("Frame")
+	hitbox.Name = "Hitbox"
+	hitbox.AnchorPoint = Vector2.new(0, 0)
+	hitbox.BackgroundTransparency = 1
+	hitbox.BorderSizePixel = 0
+	hitbox.Position = UDim2.fromScale(0, 0)
+	hitbox.Size = UDim2.fromScale(1, 1)
+	hitbox.Visible = false
+	hitbox.ZIndex = zIndex
+	hitbox.Parent = parent
+
+	local hitboxStroke = Instance.new("UIStroke")
+	hitboxStroke.Name = "Outline"
+	hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	hitboxStroke.Color = Color3.fromRGB(255, 56, 56)
+	hitboxStroke.LineJoinMode = Enum.LineJoinMode.Miter
+	hitboxStroke.Thickness = 1
+	hitboxStroke.Parent = hitbox
+	return hitbox
+end
+
 local function applyTextureImage(texture: Instance?, spriteName: string?): boolean
 	local image = textureAtlasImage()
 	if not image or not spriteName or not texture or not texture:IsA("ImageLabel") then
@@ -747,25 +769,7 @@ local function createRenderer(
 			content.Size = UDim2.fromScale(1, 1)
 			rounded(content, 2)
 			createTextureImage(content, 765)
-
-			local hitbox = Instance.new("Frame")
-			hitbox.Name = "Hitbox"
-			hitbox.AnchorPoint = Vector2.new(0, 0)
-			hitbox.BackgroundTransparency = 1
-			hitbox.BorderSizePixel = 0
-			hitbox.Position = UDim2.fromScale(0, 0)
-			hitbox.Size = UDim2.fromScale(1, 1)
-			hitbox.Visible = false
-			hitbox.ZIndex = 768
-			hitbox.Parent = object
-
-			local hitboxStroke = Instance.new("UIStroke")
-			hitboxStroke.Name = "Outline"
-			hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-			hitboxStroke.Color = Color3.fromRGB(255, 56, 56)
-			hitboxStroke.LineJoinMode = Enum.LineJoinMode.Miter
-			hitboxStroke.Thickness = 1
-			hitboxStroke.Parent = hitbox
+			createHitboxOutline(object, 768)
 
 			local spriteCanopy = createFrame(content, "SpriteCanopy", Color3.fromRGB(20, 112, 36), 762)
 			spriteCanopy.Visible = false
@@ -852,6 +856,7 @@ local function createRenderer(
 	hood.Size = UDim2.new(0.86, 0, 0.18, 0)
 	rounded(hood, 2)
 	createTextureImage(car, PLAYER_CAR_Z_INDEX + 3)
+	createHitboxOutline(car, PLAYER_CAR_Z_INDEX + 5)
 
 	local driverAvatar = Instance.new("ImageLabel")
 	driverAvatar.Name = "DriverAvatar"
@@ -1580,7 +1585,7 @@ local function render(renderer, state)
 	local playerHasTexture = textureArtEnabled()
 		and applyTextureImage(playerTexture, playerSprite.name)
 	for _, child in renderer.car:GetChildren() do
-		if child:IsA("GuiObject") and child.Name ~= "Texture" then
+		if child:IsA("GuiObject") and child.Name ~= "Texture" and child.Name ~= "Hitbox" then
 			child.Visible = not playerHasTexture
 		end
 	end
@@ -1592,6 +1597,13 @@ local function render(renderer, state)
 	local windshield = renderer.car:FindFirstChild("Windshield")
 	if windshield and windshield:IsA("GuiObject") then
 		windshield.Position = UDim2.new(0.26 + steer * 0.08, 0, 0.13, 0)
+	end
+	local playerHitbox = renderer.car:FindFirstChild("Hitbox")
+	if playerHitbox and playerHitbox:IsA("GuiObject") then
+		playerHitbox.Position = UDim2.fromScale(0, 0)
+		playerHitbox.Size = UDim2.fromScale(1, 1)
+		playerHitbox.ZIndex = playerDrawZIndex + 5
+		playerHitbox.Visible = RacerConfig.isFinalLike(mode) and useHitboxDebug
 	end
 	local showAvatarPeople = mode == "v5" and playerHasTexture
 	local driverAvatar = renderer.car:FindFirstChild("DriverAvatar")

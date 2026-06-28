@@ -1273,9 +1273,13 @@ if CLIENT.count('elseif spriteData.sprite == "PALM_TREE" then') != 1:
 
 for token in [
     "local useHitboxDebug = false",
+    "local function createHitboxOutline",
     'hitbox.Name = "Hitbox"',
     "hitbox.BackgroundTransparency = 1",
     "hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border",
+    "createHitboxOutline(car, PLAYER_CAR_Z_INDEX + 5)",
+    'child.Name ~= "Texture" and child.Name ~= "Hitbox"',
+    "playerHitbox.Visible = RacerConfig.isFinalLike(mode) and useHitboxDebug",
     'hitboxToggleLabel.Text = `{if useHitboxDebug and available then "[x]" else "[ ]"} Hitboxes`',
     "not state or not RacerConfig.isFinalLike(state.mode.Value)",
 ]:
