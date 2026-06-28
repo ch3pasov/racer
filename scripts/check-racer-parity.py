@@ -1309,4 +1309,20 @@ for token in [
     if token not in CLIENT:
         fail(f"active player keyboard controls must feed local prediction and server input directly: {token}")
 
+for token in [
+    "local latestPerfSummary = \"waiting for perf sample\"",
+    "local function inputDebugFlags(source): string",
+    "local function racerStateDebugText(label: string, state): string",
+    "local function focusDebugText(): string",
+    "local function activeDebugText(state): string",
+    "`keys K:{inputDebugFlags(keyboardInputs)} P:{inputDebugFlags(pointerInputs)} I:{inputDebugFlags(pressedInputs)}`",
+    "racerStateDebugText(\"local\", predictedState)",
+    "racerStateDebugText(\"server\", state)",
+    "local function refreshPerfLabel(state)",
+    "refreshPerfLabel(state)",
+    "if perfLabel.Visible then\n\t\t\trefreshPerfLabel(state)\n\t\tend",
+]:
+    if token not in CLIENT:
+        fail(f"F6 active racer diagnostics must expose input/local/server HUD state: {token}")
+
 print("Racer parity checks passed")

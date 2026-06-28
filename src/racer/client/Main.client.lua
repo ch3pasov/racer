@@ -1454,7 +1454,7 @@ hint.BackgroundTransparency = 0.22
 hint.Text = "Walk to a screen and press E."
 
 local perfLabel =
-	createLabel(screenGui, "PerfLog", UDim2.new(0, 14, 1, -124), UDim2.fromOffset(620, 76), 13)
+	createLabel(screenGui, "PerfLog", UDim2.new(0, 14, 1, -170), UDim2.fromOffset(760, 122), 13)
 perfLabel.BackgroundTransparency = 0.18
 perfLabel.TextXAlignment = Enum.TextXAlignment.Left
 perfLabel.TextYAlignment = Enum.TextYAlignment.Top
@@ -2120,6 +2120,7 @@ end
 
 local worldRenderAccumulator = WORLD_RENDER_INTERVAL
 local settingsLabelAccumulator = SETTINGS_LABEL_INTERVAL
+local latestPerfSummary = "waiting for perf sample"
 local perfStats = {
 	elapsed = 0,
 	frames = 0,
@@ -2155,6 +2156,38 @@ local function averageMs(totalSeconds: number, count: number): number
 	return totalSeconds * 1000 / count
 end
 
+local function inputDebugFlags(source): string
+	return `{if source.left then "L" else "-"}{if source.right then "R" else "-"}{if source.faster then "F" else "-"}{if source.slower then "S" else "-"}`
+end
+
+local function racerStateDebugText(label: string, state): string
+	if not state then
+		return `{label}=none`
+	end
+	local mph = 5 * math.round(state.speed.Value / 500)
+	return `{label}=mph:{mph} speed:{math.floor(state.speed.Value + 0.5)} time:{formatTime(state.currentLapTime.Value)} pos:{math.floor(state.position.Value + 0.5)}`
+end
+
+local function focusDebugText(): string
+	local focusedTextBox = UserInputService:GetFocusedTextBox()
+	local selectedObject = GuiService.SelectedObject
+	return `focus:{if focusedTextBox then focusedTextBox.Name else "-"} selected:{if selectedObject then selectedObject.Name else "-"}`
+end
+
+local function activeDebugText(state): string
+	return table.concat({
+		`active={if state then state.id else "none"}`,
+		`keys K:{inputDebugFlags(keyboardInputs)} P:{inputDebugFlags(pointerInputs)} I:{inputDebugFlags(pressedInputs)}`,
+		racerStateDebugText("local", predictedState),
+		racerStateDebugText("server", state),
+		focusDebugText(),
+	}, "\n")
+end
+
+local function refreshPerfLabel(state)
+	perfLabel.Text = `Perf log (F6)\n{latestPerfSummary}\n{activeDebugText(state)}`
+end
+
 local function flushPerfStats(state)
 	if perfStats.elapsed <= 0 or perfStats.frames <= 0 then
 		return
@@ -2178,7 +2211,8 @@ local function flushPerfStats(state)
 		perfStats.lastFullRows,
 		perfStats.lastWorldRows
 	)
-	perfLabel.Text = `Perf log (F6)\n{summary}`
+	latestPerfSummary = summary
+	refreshPerfLabel(state)
 	warn(`[RacerPerf] {summary}`)
 	perfLogEvent:FireServer(summary)
 	resetPerfStats()
@@ -2252,6 +2286,9 @@ RunService.RenderStepped:Connect(function(deltaTime)
 			settingsLabelAccumulator = 0
 			updateSettingLabels()
 		end
+		if perfLabel.Visible then
+			refreshPerfLabel(state)
+		end
 	else
 		updateActiveStatus(nil)
 		predictedState = nil
@@ -2259,6 +2296,9 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		perfStats.lastFullObjects = 0
 		perfStats.lastFullRows = 0
 		settingsLabelAccumulator = SETTINGS_LABEL_INTERVAL
+		if perfLabel.Visible then
+			refreshPerfLabel(nil)
+		end
 	end
 
 	if perfStats.elapsed >= PERF_LOG_INTERVAL then
