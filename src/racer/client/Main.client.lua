@@ -1854,6 +1854,32 @@ local function setInput(inputName: string, isDown: boolean)
 	inputEvent:FireServer(inputName, isDown)
 end
 
+local function handleRacerKeyboardInput(inputObject: InputObject, isDown: boolean)
+	if not controlsBound or UserInputService:GetFocusedTextBox() then
+		return
+	end
+	local inputName = keyMap[inputObject.KeyCode]
+	if inputName then
+		setInput(inputName, isDown)
+	end
+end
+
+local function syncHeldKeyboardInputs()
+	for keyCode, inputName in keyMap do
+		if UserInputService:IsKeyDown(keyCode) then
+			setInput(inputName, true)
+		end
+	end
+end
+
+UserInputService.InputBegan:Connect(function(inputObject)
+	handleRacerKeyboardInput(inputObject, true)
+end)
+
+UserInputService.InputEnded:Connect(function(inputObject)
+	handleRacerKeyboardInput(inputObject, false)
+end)
+
 local function releaseInputs()
 	for inputName in pressedInputs do
 		setInput(inputName, false)
@@ -1978,6 +2004,7 @@ local function bindRacerControls()
 		Enum.KeyCode.Down,
 		Enum.KeyCode.Tab
 	)
+	syncHeldKeyboardInputs()
 end
 
 local function unbindRacerControls()

@@ -1272,4 +1272,17 @@ for token in [
 if "updateActiveStatus(renderState)" in CLIENT:
     fail("active player v4+ HUD must read live replicated state instead of the predicted render snapshot")
 
+for token in [
+    "local function handleRacerKeyboardInput(inputObject: InputObject, isDown: boolean)",
+    "if not controlsBound or UserInputService:GetFocusedTextBox() then",
+    "setInput(inputName, isDown)",
+    "local function syncHeldKeyboardInputs()",
+    "UserInputService:IsKeyDown(keyCode)",
+    "UserInputService.InputBegan:Connect(function(inputObject)",
+    "UserInputService.InputEnded:Connect(function(inputObject)",
+    "syncHeldKeyboardInputs()",
+]:
+    if token not in CLIENT:
+        fail(f"active player keyboard controls must feed local prediction and server input directly: {token}")
+
 print("Racer parity checks passed")
