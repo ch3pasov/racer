@@ -65,22 +65,12 @@ PUBLISH_RESPONSE="$(curl --fail-with-body \
   --data-binary @"${OUTPUT_FILE}" \
   "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"
 
-PLACE_VERSION="$(python3 -c 'import json, re, sys
-body = sys.stdin.read().strip()
-if not body:
-    sys.exit(0)
-try:
-    data = json.loads(body)
-except json.JSONDecodeError:
-    match = re.search(r"\b\d+\b", body)
-    print(match.group(0) if match else "")
-    sys.exit(0)
-for key in ("versionNumber", "placeVersion", "version"):
-    value = data.get(key)
-    if isinstance(value, int):
-        print(value)
-        break
-' <<<"${PUBLISH_RESPONSE}")"
+PLACE_VERSION="$(printf '%s' "${PUBLISH_RESPONSE}" \
+  | sed -nE 's/.*"(versionNumber|placeVersion|version)"[[:space:]]*:[[:space:]]*"?([0-9]+)"?.*/\2/p' \
+  | head -n 1)"
+if [[ "${PLACE_VERSION}" == "" ]]; then
+  PLACE_VERSION="$(printf '%s' "${PUBLISH_RESPONSE}" | sed -nE 's/^[^0-9]*([0-9]+)[^0-9]*$/\1/p' | head -n 1)"
+fi
 
 if [[ "${PLACE_VERSION}" != "" ]]; then
   git_repo tag -f "racer-place-v${PLACE_VERSION}" "${GIT_COMMIT}" >/dev/null
