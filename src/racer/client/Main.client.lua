@@ -788,6 +788,11 @@ local function createRenderer(
 			spriteBody.Visible = false
 			rounded(spriteBody, 6)
 
+			local spriteContact =
+				createFrame(content, "SpriteContact", Color3.fromRGB(118, 88, 62), 764)
+			spriteContact.Visible = false
+			rounded(spriteContact, 3)
+
 			local liveText = Instance.new("TextLabel")
 			liveText.Name = "LiveBillboardText"
 			liveText.BackgroundTransparency = 1
@@ -808,6 +813,10 @@ local function createRenderer(
 			shadow.Position = UDim2.new(0.5, 0, 1.16, 0)
 			shadow.Size = UDim2.new(1.15, 0, 0.3, 0)
 			rounded(shadow, 5)
+
+			local trafficBody = createFrame(content, "TrafficBody", Color3.fromRGB(255, 230, 96), 761)
+			trafficBody.Visible = false
+			rounded(trafficBody, 2)
 
 			local roof = createFrame(content, "Roof", Color3.fromRGB(255, 255, 255), 762)
 			roof.Position = UDim2.new(0.22, 0, -0.34, 0)
@@ -959,6 +968,7 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 	local canopy2 = detailRoot:FindFirstChild("SpriteCanopy2")
 	local trunk = detailRoot:FindFirstChild("SpriteTrunk")
 	local body = detailRoot:FindFirstChild("SpriteBody")
+	local contact = detailRoot:FindFirstChild("SpriteContact")
 
 	if kind == "billboard" then
 		detailRoot.BackgroundColor3 = color
@@ -989,6 +999,13 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 			UDim2.fromScale(0.44, 0.34),
 			zIndex + 2
 		)
+		configurePart(
+			contact :: GuiObject?,
+			Color3.fromRGB(118, 88, 62),
+			UDim2.fromScale(0, 0.9),
+			UDim2.fromScale(1, 0.1),
+			zIndex
+		)
 	elseif spriteData.sprite == "PALM_TREE" then
 		configurePart(
 			trunk :: GuiObject?,
@@ -1011,6 +1028,13 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 			UDim2.fromScale(0.4, 0.22),
 			zIndex + 2
 		)
+		configurePart(
+			contact :: GuiObject?,
+			Color3.fromRGB(132, 96, 58),
+			UDim2.fromScale(0, 0.92),
+			UDim2.fromScale(1, 0.08),
+			zIndex
+		)
 	elseif kind == "plant" then
 		local isTall = string.find(spriteData.sprite, "DEAD_TREE", 1, true)
 			or spriteData.sprite == "CACTUS"
@@ -1028,6 +1052,13 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 			if isTall then UDim2.fromScale(0.56, 0.22) else UDim2.fromScale(0.76, 0.46),
 			zIndex + 1
 		)
+		configurePart(
+			contact :: GuiObject?,
+			color,
+			UDim2.fromScale(0, 0.9),
+			UDim2.fromScale(1, 0.1),
+			zIndex
+		)
 	elseif kind == "rock" then
 		configurePart(
 			body :: GuiObject?,
@@ -1042,6 +1073,13 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 			UDim2.fromScale(0.22, 0.28),
 			UDim2.fromScale(0.36, 0.34),
 			zIndex + 1
+		)
+		configurePart(
+			contact :: GuiObject?,
+			color,
+			UDim2.fromScale(0, 0.9),
+			UDim2.fromScale(1, 0.1),
+			zIndex
 		)
 	elseif kind == "column" then
 		configurePart(
@@ -1065,12 +1103,26 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 			UDim2.fromScale(0.54, 0.14),
 			zIndex + 1
 		)
+		configurePart(
+			contact :: GuiObject?,
+			color,
+			UDim2.fromScale(0, 0.9),
+			UDim2.fromScale(1, 0.1),
+			zIndex
+		)
 	else
 		configurePart(
 			body :: GuiObject?,
 			color,
 			UDim2.fromScale(0.18, 0.18),
 			UDim2.fromScale(0.64, 0.8),
+			zIndex
+		)
+		configurePart(
+			contact :: GuiObject?,
+			color,
+			UDim2.fromScale(0, 0.9),
+			UDim2.fromScale(1, 0.1),
 			zIndex
 		)
 	end
@@ -1134,9 +1186,68 @@ local function setTrafficObject(object, car)
 		texture.Visible = false
 	end
 
+	local collisionOverlap = RacerConfig.Traffic.CollisionOverlap
+	local collisionLeft = (1 - collisionOverlap) / 2
+	local trafficBody = detailRoot:FindFirstChild("TrafficBody")
+	if not hasTexture then
+		detailRoot.BackgroundTransparency = 1
+		configurePart(
+			trafficBody :: GuiObject?,
+			car.color,
+			UDim2.fromScale(collisionLeft, 0),
+			UDim2.fromScale(collisionOverlap, 1),
+			object.ZIndex
+		)
+	elseif trafficBody and trafficBody:IsA("GuiObject") then
+		trafficBody.Visible = false
+	end
+
+	local shadow = detailRoot:FindFirstChild("Shadow")
+	if shadow and shadow:IsA("GuiObject") and not hasTexture then
+		shadow.Position = UDim2.fromScale(0.5, 1.16)
+		shadow.Size = UDim2.fromScale(collisionOverlap * 1.15, 0.3)
+		shadow.ZIndex = object.ZIndex - 1
+	end
+
 	local roof = detailRoot:FindFirstChild("Roof")
-	if roof and roof:IsA("GuiObject") then
-		roof.BackgroundColor3 = car.color:Lerp(Color3.fromRGB(255, 255, 255), 0.18)
+	if roof and roof:IsA("GuiObject") and not hasTexture then
+		configurePart(
+			roof,
+			car.color:Lerp(Color3.fromRGB(255, 255, 255), 0.18),
+			UDim2.fromScale(collisionLeft + collisionOverlap * 0.22, -0.34),
+			UDim2.fromScale(collisionOverlap * 0.56, 0.42),
+			object.ZIndex + 1
+		)
+	end
+	local windshield = detailRoot:FindFirstChild("Windshield")
+	if windshield and windshield:IsA("GuiObject") and not hasTexture then
+		configurePart(
+			windshield,
+			Color3.fromRGB(38, 53, 68),
+			UDim2.fromScale(collisionLeft + collisionOverlap * 0.28, -0.22),
+			UDim2.fromScale(collisionOverlap * 0.44, 0.22),
+			object.ZIndex + 2
+		)
+	end
+	local leftLight = detailRoot:FindFirstChild("LeftLight")
+	if leftLight and leftLight:IsA("GuiObject") and not hasTexture then
+		configurePart(
+			leftLight,
+			Color3.fromRGB(245, 245, 225),
+			UDim2.fromScale(collisionLeft + collisionOverlap * 0.08, 0.68),
+			UDim2.fromScale(collisionOverlap * 0.18, 0.16),
+			object.ZIndex + 3
+		)
+	end
+	local rightLight = detailRoot:FindFirstChild("RightLight")
+	if rightLight and rightLight:IsA("GuiObject") and not hasTexture then
+		configurePart(
+			rightLight,
+			Color3.fromRGB(245, 245, 225),
+			UDim2.fromScale(collisionLeft + collisionOverlap * 0.74, 0.68),
+			UDim2.fromScale(collisionOverlap * 0.18, 0.16),
+			object.ZIndex + 3
+		)
 	end
 end
 
