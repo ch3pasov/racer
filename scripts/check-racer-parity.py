@@ -1311,22 +1311,38 @@ for token in [
 
 for token in [
     "local playerGui = player:WaitForChild(\"PlayerGui\")",
-    "if child.Name == \"RacerHud\" then\n\t\tchild:Destroy()\n\tend",
+    "local function removeForeignRacerHuds()",
+    "if child.Name == \"RacerHud\" and child ~= screenGui then",
+    "playerGui.ChildAdded:Connect(function(child)",
+    "removeForeignRacerHuds()",
     "local latestPerfSummary = \"waiting for perf sample\"",
     "perfLabel.ZIndex = OVERLAY_Z_INDEX + 100",
     "if inputObject.KeyCode == Enum.KeyCode.F6 then\n\t\tperfLabel.Visible = not perfLabel.Visible\n\t\treturn\n\tend\n\tif gameProcessed then",
     "local function inputDebugFlags(source): string",
     "local function racerStateDebugText(label: string, state): string",
     "local function focusDebugText(): string",
+    "local function hudDebugText(): string",
     "local function activeDebugText(state): string",
     "`keys K:{inputDebugFlags(keyboardInputs)} P:{inputDebugFlags(pointerInputs)} I:{inputDebugFlags(pressedInputs)}`",
     "racerStateDebugText(\"local\", predictedState)",
     "racerStateDebugText(\"server\", state)",
+    "hudDebugText()",
     "local function refreshPerfLabel(state)",
     "refreshPerfLabel(state)",
     "if perfLabel.Visible then\n\t\t\trefreshPerfLabel(state)\n\t\tend",
 ]:
     if token not in CLIENT:
         fail(f"F6 active racer diagnostics must expose input/local/server HUD state: {token}")
+
+for token in [
+    'player:GetAttribute("Activity") ~= "RacerScreen"',
+    'player:GetAttribute("RacerScreenId")',
+    'player:GetAttributeChangedSignal("Activity"):Connect(updateHud)',
+    'player:GetAttributeChangedSignal("RacerScreenId"):Connect(updateHud)',
+    "local function hudNeedsSync(state): boolean",
+    "if hudNeedsSync(state) then\n\t\tupdateHud()\n\tend",
+]:
+    if token not in CLIENT:
+        fail(f"active player HUD must follow the player's own screen state every frame: {token}")
 
 print("Racer parity checks passed")

@@ -122,7 +122,14 @@ local function activeState()
 			return state
 		end
 	end
-	return nil
+	if player:GetAttribute("Activity") ~= "RacerScreen" then
+		return nil
+	end
+	local screenId = player:GetAttribute("RacerScreenId")
+	if typeof(screenId) ~= "string" or screenId == "" then
+		return nil
+	end
+	return states[screenId]
 end
 
 local function thumbnailForUserId(userId: number): string?
@@ -1438,17 +1445,36 @@ local function renderIfChanged(renderer, state)
 end
 
 local playerGui = player:WaitForChild("PlayerGui")
-for _, child in playerGui:GetChildren() do
-	if child.Name == "RacerHud" then
-		child:Destroy()
+local screenGui: ScreenGui? = nil
+
+local function removeForeignRacerHuds()
+	if screenGui and screenGui.Parent ~= playerGui then
+		return
+	end
+	for _, child in playerGui:GetChildren() do
+		if child.Name == "RacerHud" and child ~= screenGui then
+			child:Destroy()
+		end
 	end
 end
 
-local screenGui = Instance.new("ScreenGui")
+removeForeignRacerHuds()
+
+screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RacerHud"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = playerGui
+removeForeignRacerHuds()
+
+playerGui.ChildAdded:Connect(function(child)
+	if screenGui and screenGui.Parent ~= playerGui then
+		return
+	end
+	if child.Name == "RacerHud" and child ~= screenGui then
+		child:Destroy()
+	end
+end)
 
 local title =
 	createLabel(screenGui, "Title", UDim2.fromScale(0.5, 0.025), UDim2.fromOffset(420, 52), 22)
@@ -2126,9 +2152,21 @@ for _, state in states do
 	state.activeUserId:GetPropertyChangedSignal("Value"):Connect(updateHud)
 	state.status:GetPropertyChangedSignal("Value"):Connect(updateHud)
 end
+player:GetAttributeChangedSignal("Activity"):Connect(updateHud)
+player:GetAttributeChangedSignal("RacerScreenId"):Connect(updateHud)
+
+local function hudNeedsSync(state): boolean
+	local active = state ~= nil
+	return fullScreen.Visible ~= active
+		or labRejoinButton.Visible == active
+		or hint.Visible == active
+		or (active and not controlsBound)
+		or (not active and controlsBound)
+end
 
 local worldRenderAccumulator = WORLD_RENDER_INTERVAL
 local settingsLabelAccumulator = SETTINGS_LABEL_INTERVAL
+local hudCleanupAccumulator = 0
 local latestPerfSummary = "waiting for perf sample"
 local perfStats = {
 	elapsed = 0,
@@ -2183,12 +2221,27 @@ local function focusDebugText(): string
 	return `focus:{if focusedTextBox then focusedTextBox.Name else "-"} selected:{if selectedObject then selectedObject.Name else "-"}`
 end
 
+local function hudDebugText(): string
+	local hudCount = 0
+	local foreignCount = 0
+	for _, child in playerGui:GetChildren() do
+		if child.Name == "RacerHud" then
+			hudCount += 1
+			if child ~= screenGui then
+				foreignCount += 1
+			end
+		end
+	end
+	return `attrs:{player:GetAttribute("Activity") or "-"}:{player:GetAttribute("RacerScreenId") or "-"} hud:{hudCount}/{foreignCount} full:{fullScreen.Visible}`
+end
+
 local function activeDebugText(state): string
 	return table.concat({
 		`active={if state then state.id else "none"}`,
 		`keys K:{inputDebugFlags(keyboardInputs)} P:{inputDebugFlags(pointerInputs)} I:{inputDebugFlags(pressedInputs)}`,
 		racerStateDebugText("local", predictedState),
 		racerStateDebugText("server", state),
+		hudDebugText(),
 		focusDebugText(),
 	}, "\n")
 end
@@ -2228,7 +2281,18 @@ local function flushPerfStats(state)
 end
 
 RunService.RenderStepped:Connect(function(deltaTime)
+	if screenGui and screenGui.Parent ~= playerGui then
+		return
+	end
 	local state = activeState()
+	if hudNeedsSync(state) then
+		updateHud()
+	end
+	hudCleanupAccumulator += deltaTime
+	if hudCleanupAccumulator >= 0.5 then
+		hudCleanupAccumulator = 0
+		removeForeignRacerHuds()
+	end
 
 	perfStats.elapsed += deltaTime
 	perfStats.frames += 1
