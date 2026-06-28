@@ -1164,6 +1164,9 @@ if "render(fullRenderer, renderState)" not in CLIENT:
 if "math.min(\n\t\tpredictedState.fastLapTime.Value,\n\t\tsource.fastLapTime.Value" not in CLIENT:
     fail("active player best lap prediction must not be overwritten by a slower server snapshot")
 
+if "source.lastLapTime.Value > 0" not in CLIENT or "source.currentLapTime.Value == 0" not in CLIENT:
+    fail("active player last lap prediction must survive stale zero server snapshots")
+
 if "if state.trafficOffsetsBlob then state.trafficOffsetsBlob.Value else \"\"" not in CLIENT:
     fail("world screen render signatures must include replicated traffic offsets")
 

@@ -49,6 +49,9 @@ change can be reviewed or reverted independently.
 - Texture checks now verify that every gameplay sprite has a texture rect and
   that every rect stays inside the atlas and touches the bottom edge.
   Commit: `44ba29e Improve v5 spacing and sprite textures`.
+- In v4+ active-player HUD, `Last Lap` persists after lap completion instead
+  of disappearing when the next client frame receives a stale zero server
+  snapshot.
 
 ### Not Done Yet
 
@@ -60,8 +63,6 @@ change can be reviewed or reverted independently.
   otherwise the drawn fallback remains visible.
 - Friend/global leaderboards need in-game validation in a published server with
   DataStore and friend APIs enabled.
-- In v4+ active-player HUD, `Last Lap` appears for only one frame when a lap
-  completes, then disappears. It should stay visible like the original v4 HUD.
 - Spectator display desync is still a separate future task after player-facing
   game behavior is stable.
 
@@ -105,12 +106,6 @@ change can be reviewed or reverted independently.
      good enough.
    - Acceptance: spectator view no longer drifts over time relative to the
      player view.
-
-7. `bug: keep Last Lap visible after lap completion`
-   - Fix v4+ active-player HUD so the completed lap time remains visible after
-     the finish-line frame instead of disappearing immediately.
-   - Acceptance: `Last Lap` persists after completing a lap and v5 inherits the
-     same behavior without affecting v1-v3.
 
 ### Always Check
 

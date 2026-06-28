@@ -249,7 +249,16 @@ local function ensurePredictedState(source)
 		predictedState.fastLapTime.Value,
 		source.fastLapTime.Value
 	)
-	predictedState.lastLapTime.Value = source.lastLapTime.Value
+	if
+		source.lastLapTime.Value > 0
+		or (
+			source.currentLapTime.Value == 0
+			and source.position.Value == 0
+			and source.speed.Value == 0
+		)
+	then
+		predictedState.lastLapTime.Value = source.lastLapTime.Value
+	end
 	return predictedState
 end
 
