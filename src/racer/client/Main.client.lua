@@ -391,14 +391,20 @@ local function updatePredictedState(source, dt: number)
 			)
 		end
 
-		if RacerConfig.isFinalLike(mode) and prediction.position.Value > playerZ then
-			if prediction.lapStarted and startPosition < playerZ then
+		if RacerConfig.isFinalLike(mode) then
+			local completedLap = prediction.lapStarted
+				and startPosition > trackLength - RacerConfig.SegmentLength * 2
+				and prediction.position.Value < playerZ
+			if completedLap then
+				prediction.currentLapTime.Value += step
 				prediction.lastLapTime.Value = prediction.currentLapTime.Value
 				prediction.currentLapTime.Value = 0
 				if prediction.lastLapTime.Value <= prediction.fastLapTime.Value then
 					prediction.fastLapTime.Value = prediction.lastLapTime.Value
 				end
-			else
+			elseif prediction.lapStarted then
+				prediction.currentLapTime.Value += step
+			elseif prediction.position.Value > playerZ then
 				prediction.lapStarted = true
 				prediction.currentLapTime.Value += step
 			end
@@ -450,6 +456,7 @@ local function createLabel(
 	label.Font = Enum.Font.GothamBold
 	label.Position = position
 	label.Size = size
+	label.Text = ""
 	label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	label.TextSize = textSize
 	label.TextWrapped = true

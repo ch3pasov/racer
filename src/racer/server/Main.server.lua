@@ -555,8 +555,9 @@ local function recordV5Lap(session, player: Player, lapTime: number)
 		return
 	end
 	local lapMs = math.floor(lapTime * 1000 + 0.5)
+	setV5LeaderboardText("self", `v5 Your Top 10\nSaving {formatLapTime(lapTime)}...`)
 	task.spawn(function()
-		pcall(function()
+		local globalOk, globalErr = pcall(function()
 			v5GlobalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
 				if typeof(oldValue) == "number" and oldValue > 0 and oldValue <= lapMs then
 					return oldValue
@@ -564,7 +565,7 @@ local function recordV5Lap(session, player: Player, lapTime: number)
 				return lapMs
 			end)
 		end)
-		pcall(function()
+		local personalOk, personalErr = pcall(function()
 			v5PersonalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
 				local runs = decodePersonalRuns(oldValue)
 				table.insert(runs, {
@@ -580,6 +581,10 @@ local function recordV5Lap(session, player: Player, lapTime: number)
 				return HttpService:JSONEncode(runs)
 			end)
 		end)
+		if not globalOk or not personalOk then
+			warn(`[RacerLab] v5 leaderboard save failed global={globalOk} {globalErr} personal={personalOk} {personalErr}`)
+			setV5LeaderboardText("self", `v5 Your Top 10\nSave failed\n{formatLapTime(lapTime)}`)
+		end
 		refreshV5Leaderboards(player)
 	end)
 end
@@ -1027,15 +1032,21 @@ local function updateRacer(session, dt: number)
 		)
 	end
 
-	if RacerConfig.isFinalLike(session.definition.Mode) and session.position > playerZ then
-		if session.lapStarted and startPosition < playerZ then
+	if RacerConfig.isFinalLike(session.definition.Mode) then
+		local completedLap = session.lapStarted
+			and startPosition > trackLength - RacerConfig.SegmentLength * 2
+			and session.position < playerZ
+		if completedLap then
+			session.currentLapTime += dt
 			session.lastLapTime = session.currentLapTime
 			session.currentLapTime = 0
 			if session.lastLapTime <= session.fastLapTime then
 				session.fastLapTime = session.lastLapTime
 			end
 			recordV5Lap(session, session.activePlayer, session.lastLapTime)
-		else
+		elseif session.lapStarted then
+			session.currentLapTime += dt
+		elseif session.position > playerZ then
 			session.lapStarted = true
 			session.currentLapTime += dt
 		end
