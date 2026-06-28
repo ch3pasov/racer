@@ -1,5 +1,6 @@
 local Players = game:GetService("Players")
 local ContextActionService = game:GetService("ContextActionService")
+local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
@@ -65,8 +66,11 @@ local keyMap = {
 	[Enum.KeyCode.Down] = "slower",
 }
 
+local inputNames = { "left", "right", "faster", "slower" }
 local states = {}
 local pressedInputs = {}
+local keyboardInputs = {}
+local pointerInputs = {}
 
 local function valueProxy(value)
 	return { Value = value }
@@ -1855,18 +1859,47 @@ local function setCoreGuiEnabled(coreGuiType: Enum.CoreGuiType, enabled: boolean
 end
 
 local function releaseFocusedTextBox()
+	pcall(function()
+		StarterGui:SetCore("ChatActive", false)
+	end)
+	pcall(function()
+		GuiService.SelectedObject = nil
+	end)
 	local focusedTextBox = UserInputService:GetFocusedTextBox()
 	if focusedTextBox then
-		focusedTextBox:ReleaseFocus(false)
+		pcall(function()
+			focusedTextBox:ReleaseFocus(false)
+		end)
 	end
 end
 
-local function setInput(inputName: string, isDown: boolean)
-	if pressedInputs[inputName] == isDown then
+local function inputIsDown(inputName: string): boolean
+	return keyboardInputs[inputName] == true or pointerInputs[inputName] == true
+end
+
+local function publishInput(inputName: string)
+	local isDown = inputIsDown(inputName)
+	if (pressedInputs[inputName] == true) == isDown then
 		return
 	end
 	pressedInputs[inputName] = isDown
 	inputEvent:FireServer(inputName, isDown)
+end
+
+local function setKeyboardInput(inputName: string, isDown: boolean)
+	if (keyboardInputs[inputName] == true) == isDown then
+		return
+	end
+	keyboardInputs[inputName] = isDown
+	publishInput(inputName)
+end
+
+local function setPointerInput(inputName: string, isDown: boolean)
+	if (pointerInputs[inputName] == true) == isDown then
+		return
+	end
+	pointerInputs[inputName] = isDown
+	publishInput(inputName)
 end
 
 local function handleRacerKeyboardInput(inputObject: InputObject, isDown: boolean)
@@ -1876,15 +1909,19 @@ local function handleRacerKeyboardInput(inputObject: InputObject, isDown: boolea
 	releaseFocusedTextBox()
 	local inputName = keyMap[inputObject.KeyCode]
 	if inputName then
-		setInput(inputName, isDown)
+		setKeyboardInput(inputName, isDown)
 	end
 end
 
 local function syncHeldKeyboardInputs()
+	local heldInputs = {}
 	for keyCode, inputName in keyMap do
 		if UserInputService:IsKeyDown(keyCode) then
-			setInput(inputName, true)
+			heldInputs[inputName] = true
 		end
+	end
+	for _, inputName in inputNames do
+		setKeyboardInput(inputName, heldInputs[inputName] == true)
 	end
 end
 
@@ -1897,8 +1934,10 @@ UserInputService.InputEnded:Connect(function(inputObject)
 end)
 
 local function releaseInputs()
-	for inputName in pressedInputs do
-		setInput(inputName, false)
+	for _, inputName in inputNames do
+		keyboardInputs[inputName] = false
+		pointerInputs[inputName] = false
+		publishInput(inputName)
 	end
 end
 
@@ -1934,7 +1973,7 @@ local function bindMobileHoldButton(button: TextButton, inputName: string)
 
 		activePointers[inputObject] = true
 		button.BackgroundColor3 = mobileButtonPressedColor
-		setInput(inputName, true)
+		setPointerInput(inputName, true)
 	end)
 
 	button.InputEnded:Connect(function(inputObject)
@@ -1947,7 +1986,7 @@ local function bindMobileHoldButton(button: TextButton, inputName: string)
 			return
 		end
 		button.BackgroundColor3 = mobileButtonColor
-		setInput(inputName, false)
+		setPointerInput(inputName, false)
 	end)
 end
 
@@ -1987,7 +2026,7 @@ local function racerControlAction(_, inputState: Enum.UserInputState, inputObjec
 
 	local inputName = keyMap[inputObject.KeyCode]
 	if inputName then
-		setInput(inputName, inputState == Enum.UserInputState.Begin)
+		setKeyboardInput(inputName, inputState == Enum.UserInputState.Begin)
 		return Enum.ContextActionResult.Sink
 	end
 	return Enum.ContextActionResult.Pass
@@ -2200,6 +2239,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 
 	if state then
 		local fullRenderStart = os.clock()
+		syncHeldKeyboardInputs()
 		local renderState = updatePredictedState(state, deltaTime)
 		render(fullRenderer, renderState)
 		updateActiveStatus(renderState)
