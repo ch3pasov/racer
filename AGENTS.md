@@ -5,6 +5,15 @@
   https://jakesgordon.com/games/racer/ and then make this project match that
   behavior. Do not treat such complaints as new feature requests until the
   original behavior has been checked.
+- Keep each feature change in its own commit. If a request changes multiple
+  features, prefer multiple focused commits so any one feature can be reverted
+  independently.
+- Versions v1 through v4 must fully match the original Jake Gordon Racer
+  behavior.
+- Each new version must inherit the previous version plus only the features
+  specific to that new version. For example, when fixing a bug in versions v4
+  and newer, change the v4 implementation and let v5 and newer inherit that fix
+  automatically; versions v3 and older must not be affected.
 - For Racer texture work, sprite art must match the existing gameplay/render
   hitbox. In particular, the visible bottom of each sprite must sit on the
   sprite rectangle bottom edge so cars and roadside objects do not visually
