@@ -1248,7 +1248,10 @@ if "local FINAL_OBJECT_COUNT = RacerConfig.FinalObjectCount" not in CLIENT:
     fail("object pool must be derived from v4 traffic + max visible sprite placeholders")
 
 for token in [
-    "local ACTIVE_STATUS_TOP = 18",
+    "local ACTIVE_STATUS_MARGIN_TOP = 14",
+    "local lastLap = if state.lastLapTime.Value > 0",
+    "local viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)",
+    "viewportTop + ACTIVE_STATUS_MARGIN_TOP",
     "fullRenderer.statusEnabled = false",
     "createLabel(fullScreen, \"ActiveStatus\"",
     "local function updateActiveStatus(state)",
