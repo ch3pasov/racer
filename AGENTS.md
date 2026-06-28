@@ -18,6 +18,11 @@
   hitbox. In particular, the visible bottom of each sprite must sit on the
   sprite rectangle bottom edge so cars and roadside objects do not visually
   float above the ground.
+- Every published Roblox place version must be traceable back to the exact git
+  commit that produced it. Publish only from a committed, clean tree; ensure the
+  publish embeds the commit in build metadata and records the Roblox
+  `PlaceVersion` to commit mapping; after publishing, verify that the published
+  version can be looked up by version number.
 - When a requested task has been implemented and local checks pass, publish the
   Racer Lab place if the publish environment is available. Do not wait for a
   separate publish request unless there is a concrete blocker or the user asks
