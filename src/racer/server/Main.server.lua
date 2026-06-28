@@ -87,6 +87,9 @@ createBootFallback()
 local generatedOk, GeneratedPlaceIds = pcall(function()
 	return require(ReplicatedStorage.Shared.GeneratedPlaceIds)
 end)
+local buildInfoOk, GeneratedBuildInfo = pcall(function()
+	return require(ReplicatedStorage.Shared.GeneratedBuildInfo)
+end)
 local racerShared = ReplicatedStorage:WaitForChild("RacerShared", 15)
 local configOk, RacerConfig = pcall(function()
 	return require(racerShared.RacerConfig)
@@ -102,6 +105,12 @@ if not generatedOk or not racerShared or not configOk or not mathOk then
 		`[RacerLab] boot failed generated={generatedOk} shared={racerShared ~= nil} config={configOk} math={mathOk}`
 	)
 	return
+end
+
+if buildInfoOk and type(GeneratedBuildInfo) == "table" then
+	ReplicatedStorage:SetAttribute("RacerGitCommit", GeneratedBuildInfo.GitCommit)
+	ReplicatedStorage:SetAttribute("RacerGitCommitShort", GeneratedBuildInfo.GitCommitShort)
+	ReplicatedStorage:SetAttribute("RacerPublishedAt", GeneratedBuildInfo.PublishedAt)
 end
 
 local actionEvent = Instance.new("RemoteEvent")

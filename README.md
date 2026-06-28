@@ -15,6 +15,8 @@ repositories.
 - `scripts/check-racer-parity.py` runs static parity checks for the racer model.
 - `scripts/publish-place.sh` builds and publishes Racer Lab through Roblox Open
   Cloud.
+- `scripts/lookup-place-version.sh` maps a Roblox place version back to the git
+  commit tagged during publish.
 
 ## Required Secrets For Publishing
 
@@ -49,3 +51,9 @@ python3 scripts/check-racer-parity.py
 rojo build racer.project.json --output build/racer.rbxlx
 scripts/publish-place.sh
 ```
+
+Publishing refuses to run from a dirty git tree. The published place includes
+the source commit in `ReplicatedStorage.Shared.GeneratedBuildInfo`, and the
+publish script tags successful Roblox versions as `racer-place-v<version>`.
+For example, `scripts/lookup-place-version.sh 153` shows the commit published as
+Roblox place version 153.
