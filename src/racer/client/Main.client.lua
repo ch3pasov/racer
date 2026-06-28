@@ -1437,11 +1437,18 @@ local function renderIfChanged(renderer, state)
 	return true
 end
 
+local playerGui = player:WaitForChild("PlayerGui")
+for _, child in playerGui:GetChildren() do
+	if child.Name == "RacerHud" then
+		child:Destroy()
+	end
+end
+
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RacerHud"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = player:WaitForChild("PlayerGui")
+screenGui.Parent = playerGui
 
 local title =
 	createLabel(screenGui, "Title", UDim2.fromScale(0.5, 0.025), UDim2.fromOffset(420, 52), 22)

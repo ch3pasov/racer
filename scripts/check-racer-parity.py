@@ -1310,6 +1310,8 @@ for token in [
         fail(f"active player keyboard controls must feed local prediction and server input directly: {token}")
 
 for token in [
+    "local playerGui = player:WaitForChild(\"PlayerGui\")",
+    "if child.Name == \"RacerHud\" then\n\t\tchild:Destroy()\n\tend",
     "local latestPerfSummary = \"waiting for perf sample\"",
     "perfLabel.ZIndex = OVERLAY_Z_INDEX + 100",
     "if inputObject.KeyCode == Enum.KeyCode.F6 then\n\t\tperfLabel.Visible = not perfLabel.Visible\n\t\treturn\n\tend\n\tif gameProcessed then",
