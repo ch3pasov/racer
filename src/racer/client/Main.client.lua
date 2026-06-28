@@ -1839,11 +1839,26 @@ end)
 local controlsBound = false
 local savedCameraType: Enum.CameraType? = nil
 local savedPlayerListEnabled = true
+local savedChatEnabled = true
 
-local function setPlayerListEnabled(enabled: boolean)
-	pcall(function()
-		StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, enabled)
+local function getCoreGuiEnabled(coreGuiType: Enum.CoreGuiType, fallback: boolean): boolean
+	local ok, enabled = pcall(function()
+		return StarterGui:GetCoreGuiEnabled(coreGuiType)
 	end)
+	return if ok then enabled else fallback
+end
+
+local function setCoreGuiEnabled(coreGuiType: Enum.CoreGuiType, enabled: boolean)
+	pcall(function()
+		StarterGui:SetCoreGuiEnabled(coreGuiType, enabled)
+	end)
+end
+
+local function releaseFocusedTextBox()
+	local focusedTextBox = UserInputService:GetFocusedTextBox()
+	if focusedTextBox then
+		focusedTextBox:ReleaseFocus(false)
+	end
 end
 
 local function setInput(inputName: string, isDown: boolean)
@@ -1855,9 +1870,10 @@ local function setInput(inputName: string, isDown: boolean)
 end
 
 local function handleRacerKeyboardInput(inputObject: InputObject, isDown: boolean)
-	if not controlsBound or UserInputService:GetFocusedTextBox() then
+	if not controlsBound then
 		return
 	end
+	releaseFocusedTextBox()
 	local inputName = keyMap[inputObject.KeyCode]
 	if inputName then
 		setInput(inputName, isDown)
@@ -1987,8 +2003,11 @@ local function bindRacerControls()
 		savedCameraType = camera.CameraType
 		camera.CameraType = Enum.CameraType.Scriptable
 	end
-	savedPlayerListEnabled = true
-	setPlayerListEnabled(false)
+	savedPlayerListEnabled = getCoreGuiEnabled(Enum.CoreGuiType.PlayerList, true)
+	savedChatEnabled = getCoreGuiEnabled(Enum.CoreGuiType.Chat, true)
+	setCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+	setCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+	releaseFocusedTextBox()
 	ContextActionService:BindActionAtPriority(
 		CONTROL_ACTION,
 		racerControlAction,
@@ -2019,7 +2038,8 @@ local function unbindRacerControls()
 	if camera then
 		camera.CameraType = savedCameraType or Enum.CameraType.Custom
 	end
-	setPlayerListEnabled(savedPlayerListEnabled)
+	setCoreGuiEnabled(Enum.CoreGuiType.PlayerList, savedPlayerListEnabled)
+	setCoreGuiEnabled(Enum.CoreGuiType.Chat, savedChatEnabled)
 	savedCameraType = nil
 end
 
@@ -2182,7 +2202,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		local fullRenderStart = os.clock()
 		local renderState = updatePredictedState(state, deltaTime)
 		render(fullRenderer, renderState)
-		updateActiveStatus(state)
+		updateActiveStatus(renderState)
 		perfStats.fullRenderTime += os.clock() - fullRenderStart
 		perfStats.fullRenderCount += 1
 		perfStats.lastFullObjects = fullRenderer.lastObjectCount or 0

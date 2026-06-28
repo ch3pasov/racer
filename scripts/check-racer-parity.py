@@ -1264,22 +1264,31 @@ for token in [
     "activeStatusFast.Text = `Fastest Lap: {formatTime(state.fastLapTime.Value)}`",
     "if state.lastLapTime.Value > 0 then",
     "activeStatusLast.Visible = true",
-    "render(fullRenderer, renderState)\n\t\tupdateActiveStatus(state)",
+    "render(fullRenderer, renderState)\n\t\tupdateActiveStatus(renderState)",
 ]:
     if token not in CLIENT:
         fail(f"active player v4+ HUD must be a fullscreen overlay below the Roblox topbar: {token}")
 
-if "updateActiveStatus(renderState)" in CLIENT:
-    fail("active player v4+ HUD must read live replicated state instead of the predicted render snapshot")
+if "render(fullRenderer, renderState)\n\t\tupdateActiveStatus(state)" in CLIENT:
+    fail("active player v4+ HUD must mirror the local active render state, not the spectator replication state")
 
 for token in [
+    "local savedChatEnabled = true",
+    "local function getCoreGuiEnabled(coreGuiType: Enum.CoreGuiType, fallback: boolean): boolean",
+    "StarterGui:GetCoreGuiEnabled(coreGuiType)",
+    "local function releaseFocusedTextBox()",
+    "focusedTextBox:ReleaseFocus(false)",
     "local function handleRacerKeyboardInput(inputObject: InputObject, isDown: boolean)",
-    "if not controlsBound or UserInputService:GetFocusedTextBox() then",
+    "if not controlsBound then",
+    "releaseFocusedTextBox()",
     "setInput(inputName, isDown)",
     "local function syncHeldKeyboardInputs()",
     "UserInputService:IsKeyDown(keyCode)",
     "UserInputService.InputBegan:Connect(function(inputObject)",
     "UserInputService.InputEnded:Connect(function(inputObject)",
+    "savedChatEnabled = getCoreGuiEnabled(Enum.CoreGuiType.Chat, true)",
+    "setCoreGuiEnabled(Enum.CoreGuiType.Chat, false)",
+    "setCoreGuiEnabled(Enum.CoreGuiType.Chat, savedChatEnabled)",
     "syncHeldKeyboardInputs()",
 ]:
     if token not in CLIENT:
