@@ -1,5 +1,5 @@
 local RacerTextures = {
-	Image = "rbxassetid://119855289308301",
+	Image = "rbxassetid://108725753145696",
 	SheetSize = Vector2.new(1024, 1024),
 	Sprites = {
 		PLAYER_STRAIGHT = { x = 0, y = 0, w = 128, h = 128 },

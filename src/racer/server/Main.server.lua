@@ -859,9 +859,9 @@ local function createV5LeaderboardBoard(
 end
 
 local function createV5Leaderboards()
-	createV5LeaderboardBoard("self", "v5 Your Top 10", Vector3.new(-24, 5.2, 18), Color3.fromRGB(236, 240, 244))
-	createV5LeaderboardBoard("friends", "v5 Friends Top 10", Vector3.new(0, 5.2, 18), Color3.fromRGB(134, 240, 150))
-	createV5LeaderboardBoard("global", "v5 Global Top 10", Vector3.new(24, 5.2, 18), Color3.fromRGB(255, 221, 78))
+	createV5LeaderboardBoard("self", "v5 Your Top 10", Vector3.new(-24, 5.2, 66), Color3.fromRGB(236, 240, 244))
+	createV5LeaderboardBoard("friends", "v5 Friends Top 10", Vector3.new(0, 5.2, 66), Color3.fromRGB(134, 240, 150))
+	createV5LeaderboardBoard("global", "v5 Global Top 10", Vector3.new(24, 5.2, 66), Color3.fromRGB(255, 221, 78))
 end
 
 local function buildLab()
@@ -874,16 +874,16 @@ local function buildLab()
 
 	createPart(
 		"LabFloor",
-		Vector3.new(150, 1, 70),
+		Vector3.new(170, 1, 150),
 		CFrame.new(0, -0.5, 0),
 		Color3.fromRGB(34, 38, 48),
 		world,
 		Enum.Material.Concrete
 	)
-	addInvisibleWall("BackWall", Vector3.new(0, 40, -34.5), Vector3.new(152, 82, 1.2))
-	addInvisibleWall("FrontWall", Vector3.new(0, 40, 34.5), Vector3.new(152, 82, 1.2))
-	addInvisibleWall("LeftWall", Vector3.new(-74.5, 40, 0), Vector3.new(1.2, 82, 72))
-	addInvisibleWall("RightWall", Vector3.new(74.5, 40, 0), Vector3.new(1.2, 82, 72))
+	addInvisibleWall("BackWall", Vector3.new(0, 40, -74.5), Vector3.new(172, 82, 1.2))
+	addInvisibleWall("FrontWall", Vector3.new(0, 40, 74.5), Vector3.new(172, 82, 1.2))
+	addInvisibleWall("LeftWall", Vector3.new(-84.5, 40, 0), Vector3.new(1.2, 82, 152))
+	addInvisibleWall("RightWall", Vector3.new(84.5, 40, 0), Vector3.new(1.2, 82, 152))
 
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "RacerLabSpawn"

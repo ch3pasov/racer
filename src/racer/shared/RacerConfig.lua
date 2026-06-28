@@ -100,7 +100,7 @@ RacerConfig.Screens = {
 		Id = "v5",
 		Name = "v5 Lab",
 		Mode = "v5",
-		Position = Vector3.new(0, 0, 8),
+		Position = Vector3.new(0, 0, 44),
 		Color = Color3.fromRGB(134, 240, 150),
 	},
 }

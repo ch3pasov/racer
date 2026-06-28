@@ -168,6 +168,11 @@ for name, (width, height) in expected_sprites.items():
         CONFIG,
         f"{name} dimensions must match javascript-racer common.js",
     )
+    require(
+        rf"{name}\s*=\s*\{{\s*x\s*=\s*\d+,\s*y\s*=\s*\d+,\s*w\s*=\s*\d+,\s*h\s*=\s*\d+\s*\}}",
+        TEXTURES,
+        f"texture rect missing for {name}",
+    )
 
 if abs(PLAYER_WIDTH - 0.3) > 1e-9:
     fail("player collision width must be SPRITES.PLAYER_STRAIGHT.w * SPRITES.SCALE = 0.3")
