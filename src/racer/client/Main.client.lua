@@ -1534,20 +1534,81 @@ fullRenderer.root.ZIndex = 201
 fullRenderer.root.Size = UDim2.new(1, 0, 1, 0)
 fullRenderer.statusEnabled = false
 
-activeStatus =
-	createLabel(fullScreen, "ActiveStatus", UDim2.fromOffset(0, 0), UDim2.fromOffset(640, 42), 15)
+activeStatus = Instance.new("Frame")
+activeStatus.Name = "ActiveStatus"
 activeStatus.AnchorPoint = Vector2.new(0.5, 0)
+activeStatus.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
+activeStatus.BackgroundTransparency = 0.1
+activeStatus.BorderSizePixel = 0
+activeStatus.Size = UDim2.fromOffset(640, 42)
 activeStatus.Visible = false
 activeStatus.ZIndex = 255
+activeStatus.Parent = fullScreen
 updateFullViewportSize()
+
+local function createActiveStatusField(name: string, position: UDim2, size: UDim2, alignment: Enum.TextXAlignment)
+	local label = Instance.new("TextLabel")
+	label.Name = name
+	label.BackgroundTransparency = 1
+	label.BorderSizePixel = 0
+	label.Font = Enum.Font.GothamBold
+	label.Position = position
+	label.Size = size
+	label.Text = ""
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.TextSize = 15
+	label.TextXAlignment = alignment
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.ZIndex = activeStatus.ZIndex + 1
+	label.Parent = activeStatus
+	return label
+end
+
+local activeStatusCurrent = createActiveStatusField(
+	"CurrentLapTime",
+	UDim2.new(0, 12, 0, 0),
+	UDim2.new(0, 120, 1, 0),
+	Enum.TextXAlignment.Left
+)
+local activeStatusLast = createActiveStatusField(
+	"LastLapTime",
+	UDim2.new(0, 140, 0, 0),
+	UDim2.new(0, 135, 1, 0),
+	Enum.TextXAlignment.Left
+)
+local activeStatusFast = createActiveStatusField(
+	"FastLapTime",
+	UDim2.new(0, 285, 0, 0),
+	UDim2.new(0, 210, 1, 0),
+	Enum.TextXAlignment.Center
+)
+local activeStatusSpeed = createActiveStatusField(
+	"Speed",
+	UDim2.new(1, -120, 0, 0),
+	UDim2.new(0, 108, 1, 0),
+	Enum.TextXAlignment.Right
+)
 local worldRenderers = {}
 
 local function updateActiveStatus(state)
 	if state and RacerConfig.isFinalLike(state.mode.Value) then
-		activeStatus.Text = finalHudText(state, state.speed.Value)
+		activeStatusSpeed.Text = `{5 * math.round(state.speed.Value / 500)} mph`
+		activeStatusCurrent.Text = `Time: {formatTime(state.currentLapTime.Value)}`
+		activeStatusFast.Text = `Fastest Lap: {formatTime(state.fastLapTime.Value)}`
+		if state.lastLapTime.Value > 0 then
+			activeStatusLast.Text = `Last Lap: {formatTime(state.lastLapTime.Value)}`
+			activeStatusLast.Visible = true
+		else
+			activeStatusLast.Text = ""
+			activeStatusLast.Visible = false
+		end
 		activeStatus.Visible = true
 	else
-		activeStatus.Text = ""
+		activeStatusSpeed.Text = ""
+		activeStatusCurrent.Text = ""
+		activeStatusLast.Text = ""
+		activeStatusFast.Text = ""
+		activeStatusLast.Visible = false
 		activeStatus.Visible = false
 	end
 end
