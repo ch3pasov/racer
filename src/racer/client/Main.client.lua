@@ -747,6 +747,23 @@ local function createRenderer(
 			rounded(content, 2)
 			createTextureImage(content, 765)
 
+			local spriteCanopy = createFrame(content, "SpriteCanopy", Color3.fromRGB(20, 112, 36), 762)
+			spriteCanopy.Visible = false
+			rounded(spriteCanopy, 8)
+
+			local spriteCanopy2 =
+				createFrame(content, "SpriteCanopy2", Color3.fromRGB(31, 125, 39), 763)
+			spriteCanopy2.Visible = false
+			rounded(spriteCanopy2, 8)
+
+			local spriteTrunk = createFrame(content, "SpriteTrunk", Color3.fromRGB(118, 88, 62), 762)
+			spriteTrunk.Visible = false
+			rounded(spriteTrunk, 3)
+
+			local spriteBody = createFrame(content, "SpriteBody", Color3.fromRGB(124, 124, 116), 762)
+			spriteBody.Visible = false
+			rounded(spriteBody, 6)
+
 			local liveText = Instance.new("TextLabel")
 			liveText.Name = "LiveBillboardText"
 			liveText.BackgroundTransparency = 1
@@ -875,7 +892,8 @@ local function showTrafficDetails(object)
 	detailRoot.ZIndex = object.ZIndex
 	for _, child in detailRoot:GetChildren() do
 		if child:IsA("GuiObject") then
-			child.Visible = true
+			local isSpritePlaceholder = string.sub(child.Name, 1, 6) == "Sprite"
+			child.Visible = not isSpritePlaceholder and child.Name ~= "LiveBillboardText"
 			child.ZIndex = object.ZIndex
 		end
 	end
@@ -887,6 +905,149 @@ local function setPlayerCarZIndex(car: GuiObject, zIndex: number)
 		if child:IsA("GuiObject") then
 			child.ZIndex = zIndex
 		end
+	end
+end
+
+local function configurePart(
+	part: GuiObject?,
+	color: Color3,
+	position: UDim2,
+	size: UDim2,
+	zIndex: number
+)
+	if not part then
+		return
+	end
+	part.BackgroundColor3 = color
+	part.Position = position
+	part.Size = size
+	part.Rotation = 0
+	part.ZIndex = zIndex
+	part.Visible = true
+end
+
+local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: number)
+	local definition = spriteData.definition
+	local kind = definition.kind
+	local color = definition.color
+	local canopy = detailRoot:FindFirstChild("SpriteCanopy")
+	local canopy2 = detailRoot:FindFirstChild("SpriteCanopy2")
+	local trunk = detailRoot:FindFirstChild("SpriteTrunk")
+	local body = detailRoot:FindFirstChild("SpriteBody")
+
+	if kind == "billboard" then
+		detailRoot.BackgroundColor3 = color
+		detailRoot.BackgroundTransparency = 0
+		return
+	end
+
+	detailRoot.BackgroundTransparency = 1
+	if kind == "tree" then
+		configurePart(
+			trunk :: GuiObject?,
+			Color3.fromRGB(118, 88, 62),
+			UDim2.fromScale(0.43, 0.52),
+			UDim2.fromScale(0.14, 0.48),
+			zIndex
+		)
+		configurePart(
+			canopy :: GuiObject?,
+			color,
+			UDim2.fromScale(0.12, 0.06),
+			UDim2.fromScale(0.76, 0.54),
+			zIndex + 1
+		)
+		configurePart(
+			canopy2 :: GuiObject?,
+			color:Lerp(Color3.fromRGB(80, 180, 80), 0.2),
+			UDim2.fromScale(0.24, 0.0),
+			UDim2.fromScale(0.44, 0.34),
+			zIndex + 2
+		)
+	elseif spriteData.sprite == "PALM_TREE" then
+		configurePart(
+			trunk :: GuiObject?,
+			Color3.fromRGB(132, 96, 58),
+			UDim2.fromScale(0.45, 0.24),
+			UDim2.fromScale(0.1, 0.76),
+			zIndex
+		)
+		configurePart(
+			canopy :: GuiObject?,
+			color,
+			UDim2.fromScale(0.15, 0.0),
+			UDim2.fromScale(0.7, 0.28),
+			zIndex + 1
+		)
+		configurePart(
+			canopy2 :: GuiObject?,
+			color:Lerp(Color3.fromRGB(80, 180, 80), 0.18),
+			UDim2.fromScale(0.3, 0.1),
+			UDim2.fromScale(0.4, 0.22),
+			zIndex + 2
+		)
+	elseif kind == "plant" then
+		local isTall = string.find(spriteData.sprite, "DEAD_TREE", 1, true)
+			or spriteData.sprite == "CACTUS"
+		configurePart(
+			trunk :: GuiObject?,
+			if isTall then color else Color3.fromRGB(118, 88, 62),
+			if isTall then UDim2.fromScale(0.43, 0.1) else UDim2.fromScale(0.38, 0.52),
+			if isTall then UDim2.fromScale(0.14, 0.9) else UDim2.fromScale(0.24, 0.48),
+			zIndex
+		)
+		configurePart(
+			canopy :: GuiObject?,
+			color,
+			if isTall then UDim2.fromScale(0.22, 0.22) else UDim2.fromScale(0.12, 0.48),
+			if isTall then UDim2.fromScale(0.56, 0.22) else UDim2.fromScale(0.76, 0.46),
+			zIndex + 1
+		)
+	elseif kind == "rock" then
+		configurePart(
+			body :: GuiObject?,
+			color,
+			UDim2.fromScale(0.12, 0.38),
+			UDim2.fromScale(0.76, 0.6),
+			zIndex
+		)
+		configurePart(
+			canopy :: GuiObject?,
+			color:Lerp(Color3.fromRGB(210, 210, 200), 0.16),
+			UDim2.fromScale(0.22, 0.28),
+			UDim2.fromScale(0.36, 0.34),
+			zIndex + 1
+		)
+	elseif kind == "column" then
+		configurePart(
+			trunk :: GuiObject?,
+			color,
+			UDim2.fromScale(0.34, 0.14),
+			UDim2.fromScale(0.32, 0.78),
+			zIndex
+		)
+		configurePart(
+			canopy :: GuiObject?,
+			color,
+			UDim2.fromScale(0.2, 0.0),
+			UDim2.fromScale(0.6, 0.18),
+			zIndex + 1
+		)
+		configurePart(
+			body :: GuiObject?,
+			color:Lerp(Color3.fromRGB(255, 255, 255), 0.12),
+			UDim2.fromScale(0.2, 0.88),
+			UDim2.fromScale(0.6, 0.12),
+			zIndex + 1
+		)
+	else
+		configurePart(
+			body :: GuiObject?,
+			color,
+			UDim2.fromScale(0.18, 0.18),
+			UDim2.fromScale(0.64, 0.8),
+			zIndex
+		)
 	end
 end
 
@@ -909,6 +1070,7 @@ local function setSpriteObject(object, spriteData, mode: string)
 		if texture and texture:IsA("GuiObject") then
 			texture.Visible = false
 		end
+		showSpritePlaceholder(detailRoot, spriteData, object.ZIndex)
 	end
 	local liveText = detailRoot:FindFirstChild("LiveBillboardText")
 	if liveText and liveText:IsA("TextLabel") then

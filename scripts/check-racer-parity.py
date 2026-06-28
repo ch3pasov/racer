@@ -1243,6 +1243,19 @@ for token in [
     if token not in CLIENT:
         fail(f"Render.sprite clipping must crop without changing apparent sprite proportions: {token}")
 
+for token in [
+    '"SpriteCanopy"',
+    '"SpriteTrunk"',
+    '"SpriteBody"',
+    'if kind == "billboard" then',
+    "detailRoot.BackgroundTransparency = 1",
+    'child.Visible = not isSpritePlaceholder and child.Name ~= "LiveBillboardText"',
+    'elseif kind == "rock" then',
+    'elseif kind == "column" then',
+]:
+    if token not in CLIENT:
+        fail(f"placeholder roadside sprites must not render as full opaque sprite rectangles: {token}")
+
 for forbidden in [
     "if child.Name == \"Shadow\" then object.ZIndex - 1 else object.ZIndex + 1",
     "child.ZIndex = zIndex + 1",
