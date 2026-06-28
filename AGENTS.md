@@ -14,6 +14,10 @@
   specific to that new version. For example, when fixing a bug in versions v4
   and newer, change the v4 implementation and let v5 and newer inherit that fix
   automatically; versions v3 and older must not be affected.
+- Prioritize fixing the game for the active player inside the entered racer
+  screen first. Spectator/observer display fixes for people standing nearby and
+  watching someone else's game can be handled later unless the user explicitly
+  asks for spectator mode work.
 - For Racer texture work, sprite art must match the existing gameplay/render
   hitbox. In particular, the visible bottom of each sprite must sit on the
   sprite rectangle bottom edge so cars and roadside objects do not visually
