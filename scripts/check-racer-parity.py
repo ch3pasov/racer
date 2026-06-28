@@ -1264,9 +1264,12 @@ for token in [
     "activeStatusFast.Text = `Fastest Lap: {formatTime(state.fastLapTime.Value)}`",
     "if state.lastLapTime.Value > 0 then",
     "activeStatusLast.Visible = true",
-    "updateActiveStatus(renderState)",
+    "render(fullRenderer, renderState)\n\t\tupdateActiveStatus(state)",
 ]:
     if token not in CLIENT:
         fail(f"active player v4+ HUD must be a fullscreen overlay below the Roblox topbar: {token}")
+
+if "updateActiveStatus(renderState)" in CLIENT:
+    fail("active player v4+ HUD must read live replicated state instead of the predicted render snapshot")
 
 print("Racer parity checks passed")

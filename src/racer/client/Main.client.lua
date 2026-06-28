@@ -2155,7 +2155,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		local fullRenderStart = os.clock()
 		local renderState = updatePredictedState(state, deltaTime)
 		render(fullRenderer, renderState)
-		updateActiveStatus(renderState)
+		updateActiveStatus(state)
 		perfStats.fullRenderTime += os.clock() - fullRenderStart
 		perfStats.fullRenderCount += 1
 		perfStats.lastFullObjects = fullRenderer.lastObjectCount or 0
