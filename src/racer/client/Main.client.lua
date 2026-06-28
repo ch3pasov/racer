@@ -950,59 +950,34 @@ local function showSpritePlaceholder(detailRoot: GuiObject, spriteData, zIndex: 
 			UDim2.fromScale(0.14, 0.48),
 			zIndex
 		)
-		configurePart(
-			canopy :: GuiObject?,
-			color,
-			UDim2.fromScale(0.12, 0.06),
-			UDim2.fromScale(0.76, 0.54),
-			zIndex + 1
-		)
-		configurePart(
-			canopy2 :: GuiObject?,
-			color:Lerp(Color3.fromRGB(80, 180, 80), 0.2),
-			UDim2.fromScale(0.24, 0.0),
-			UDim2.fromScale(0.44, 0.34),
-			zIndex + 2
-		)
 	elseif spriteData.sprite == "PALM_TREE" then
 		configurePart(
 			trunk :: GuiObject?,
 			Color3.fromRGB(132, 96, 58),
-			UDim2.fromScale(0.45, 0.24),
-			UDim2.fromScale(0.1, 0.76),
+			UDim2.fromScale(0.45, 0.16),
+			UDim2.fromScale(0.1, 0.84),
 			zIndex
-		)
-		configurePart(
-			canopy :: GuiObject?,
-			color,
-			UDim2.fromScale(0.15, 0.0),
-			UDim2.fromScale(0.7, 0.28),
-			zIndex + 1
-		)
-		configurePart(
-			canopy2 :: GuiObject?,
-			color:Lerp(Color3.fromRGB(80, 180, 80), 0.18),
-			UDim2.fromScale(0.3, 0.1),
-			UDim2.fromScale(0.4, 0.22),
-			zIndex + 2
 		)
 	elseif kind == "plant" then
 		local isTall = string.find(spriteData.sprite, "DEAD_TREE", 1, true)
 			or spriteData.sprite == "CACTUS"
-		configurePart(
-			trunk :: GuiObject?,
-			if isTall then color else Color3.fromRGB(118, 88, 62),
-			if isTall then UDim2.fromScale(0.43, 0.1) else UDim2.fromScale(0.38, 0.52),
-			if isTall then UDim2.fromScale(0.14, 0.9) else UDim2.fromScale(0.24, 0.48),
-			zIndex
-		)
-		configurePart(
-			canopy :: GuiObject?,
-			color,
-			if isTall then UDim2.fromScale(0.22, 0.22) else UDim2.fromScale(0.12, 0.48),
-			if isTall then UDim2.fromScale(0.56, 0.22) else UDim2.fromScale(0.76, 0.46),
-			zIndex + 1
-		)
+		if isTall then
+			configurePart(
+				trunk :: GuiObject?,
+				color,
+				UDim2.fromScale(0.43, 0.1),
+				UDim2.fromScale(0.14, 0.9),
+				zIndex
+			)
+		else
+			configurePart(
+				body :: GuiObject?,
+				color,
+				UDim2.fromScale(0.22, 0.48),
+				UDim2.fromScale(0.56, 0.48),
+				zIndex
+			)
+		end
 	elseif kind == "rock" then
 		configurePart(
 			body :: GuiObject?,

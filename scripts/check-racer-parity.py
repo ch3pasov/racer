@@ -1251,6 +1251,7 @@ for token in [
     "detailRoot.BackgroundTransparency = 1",
     'child.Visible = not isSpritePlaceholder and child.Name ~= "LiveBillboardText"',
     "child.Visible = not hasTexture and not isSpriteOnly",
+    "UDim2.fromScale(0.22, 0.48)",
     'elseif kind == "rock" then',
     'elseif kind == "column" then',
 ]:
@@ -1260,6 +1261,7 @@ for token in [
 for forbidden in [
     "if child.Name == \"Shadow\" then object.ZIndex - 1 else object.ZIndex + 1",
     "child.ZIndex = zIndex + 1",
+    "color:Lerp(Color3.fromRGB(80, 180, 80)",
 ]:
     if forbidden in CLIENT:
         fail(f"placeholder sprite parts must render as one atomic sprite layer: {forbidden}")
