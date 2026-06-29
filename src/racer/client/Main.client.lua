@@ -1318,7 +1318,8 @@ local function placeClippedObject(
 	heightScale: number,
 	clipY: number,
 	collisionboxWidthScale: number?,
-	collisionboxHeightScale: number?
+	collisionboxHeightScale: number?,
+	collisionboxCenterX: number?
 ): boolean
 	local widthPx = widthScale * WIDTH
 	local heightPx = heightScale * HEIGHT
@@ -1358,7 +1359,8 @@ local function placeClippedObject(
 		enabled: boolean,
 		boxWidthScale: number?,
 		boxHeightScale: number?,
-		zIndex: number
+		zIndex: number,
+		boxCenterX: number?
 	)
 		local box = object:FindFirstChild(name)
 		if not box or not box:IsA("GuiObject") then
@@ -1371,8 +1373,9 @@ local function placeClippedObject(
 
 		local boxWidthPx = boxWidthScale * WIDTH
 		local boxHeightPx = boxHeightScale * HEIGHT
-		local boxLeftX = x - boxWidthPx / 2
-		local boxRightX = x + boxWidthPx / 2
+		local centerX = boxCenterX or x
+		local boxLeftX = centerX - boxWidthPx / 2
+		local boxRightX = centerX + boxWidthPx / 2
 		local boxTopY = bottomY - boxHeightPx
 		local boxVisibleLeftX = math.max(boxLeftX, visibleLeftX)
 		local boxVisibleRightX = math.min(boxRightX, visibleRightX)
@@ -1406,7 +1409,8 @@ local function placeClippedObject(
 		useCollisionboxDebug,
 		collisionboxWidthScale,
 		collisionboxHeightScale or heightScale,
-		object.ZIndex + 5
+		object.ZIndex + 5,
+		collisionboxCenterX
 	)
 	object.Visible = true
 	return true
@@ -1746,6 +1750,22 @@ local function render(renderer, state)
 				object.ZIndex = objectZIndex(drawLayer)
 				setSpriteObject(object, spriteData, mode)
 				local collisionboxHeight = math.min(height, COLLISION_DEBUG_STRIP_HEIGHT_PX / HEIGHT)
+				local spriteWidthWorld = spriteDef.width * RacerConfig.SpriteScale
+				local spriteCenterWorld = RacerConfig.roadsideSpriteCenter(spriteData)
+				local playerHalfWidth = RacerConfig.Traffic.PlayerWidth / 2
+				local collisionMinWorld = spriteCenterWorld - spriteWidthWorld / 2 - playerHalfWidth
+				local collisionMaxWorld = spriteCenterWorld + spriteWidthWorld / 2 + playerHalfWidth
+				if spriteData.offset > 0 then
+					collisionMinWorld = math.max(collisionMinWorld, 1)
+				else
+					collisionMaxWorld = math.min(collisionMaxWorld, -1)
+				end
+				local collisionboxWidthWorld = math.max(0, collisionMaxWorld - collisionMinWorld)
+				local collisionboxCenterWorld = (collisionMinWorld + collisionMaxWorld) / 2
+				local collisionboxX = projected.p1.x
+					+ scale * collisionboxCenterWorld * roadWidthSetting * WIDTH / 2
+				local collisionboxWidth =
+					collisionboxWidthWorld * scale * roadWidthSetting / 2
 				if
 					placeClippedObject(
 						object,
@@ -1754,8 +1774,9 @@ local function render(renderer, state)
 						width,
 						height,
 						projected.clip,
-						width,
-						collisionboxHeight
+						collisionboxWidth,
+						collisionboxHeight,
+						collisionboxX
 					)
 				then
 					drawLayer += 1
