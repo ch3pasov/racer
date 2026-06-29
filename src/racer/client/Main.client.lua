@@ -552,6 +552,34 @@ local function createHitboxOutline(parent: Instance, zIndex: number)
 	hitbox.ZIndex = zIndex
 	hitbox.Parent = parent
 
+	local function createHitboxLine(name: string, position: UDim2, size: UDim2, anchorPoint: Vector2?)
+		local line = Instance.new("Frame")
+		line.Name = name
+		line.AnchorPoint = anchorPoint or Vector2.new(0, 0)
+		line.BackgroundColor3 = Color3.fromRGB(255, 56, 56)
+		line.BorderSizePixel = 0
+		line.Position = position
+		line.Size = size
+		line.ZIndex = zIndex + 1
+		line.Parent = hitbox
+		return line
+	end
+
+	createHitboxLine("Top", UDim2.fromScale(0, 0), UDim2.new(1, 0, 0, 2))
+	createHitboxLine(
+		"Bottom",
+		UDim2.fromScale(0, 1),
+		UDim2.new(1, 0, 0, 2),
+		Vector2.new(0, 1)
+	)
+	createHitboxLine("Left", UDim2.fromScale(0, 0), UDim2.new(0, 2, 1, 0))
+	createHitboxLine(
+		"Right",
+		UDim2.fromScale(1, 0),
+		UDim2.new(0, 2, 1, 0),
+		Vector2.new(1, 0)
+	)
+
 	local hitboxStroke = Instance.new("UIStroke")
 	hitboxStroke.Name = "Outline"
 	hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -1329,6 +1357,11 @@ local function placeClippedObject(
 				hitboxVisibleHeight / visibleHeight
 			)
 			hitbox.ZIndex = object.ZIndex + 3
+			for _, child in hitbox:GetChildren() do
+				if child:IsA("GuiObject") then
+					child.ZIndex = object.ZIndex + 4
+				end
+			end
 			hitbox.Visible = true
 		else
 			hitbox.Visible = false

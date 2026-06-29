@@ -1284,6 +1284,10 @@ for token in [
     "local function createHitboxOutline",
     'hitbox.Name = "Hitbox"',
     "hitbox.BackgroundTransparency = 1",
+    'createHitboxLine("Top"',
+    '"Bottom"',
+    'createHitboxLine("Left"',
+    '"Right"',
     "hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border",
     "createHitboxOutline(car, PLAYER_CAR_Z_INDEX + 5)",
     'child.Name ~= "Texture" and child.Name ~= "Hitbox"',
@@ -1292,6 +1296,7 @@ for token in [
     "local hitboxVisibleRightX = math.min(hitboxRightX, visibleRightX)",
     "hitboxVisibleWidth / visibleWidth",
     "hitboxVisibleHeight / visibleHeight",
+    "child.ZIndex = object.ZIndex + 4",
     'hitboxToggleLabel.Text = `{if useHitboxDebug and available then "[x]" else "[ ]"} Hitboxes`',
     "not state or not RacerConfig.isFinalLike(state.mode.Value)",
 ]:
