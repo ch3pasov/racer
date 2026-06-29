@@ -797,7 +797,6 @@ local function createRenderer(
 	end
 
 	local finalObjects = {}
-	local roadsideCollisionboxes = {}
 	if includeFinalObjects ~= false then
 		for index = 1, FINAL_OBJECT_COUNT do
 			local object =
@@ -885,14 +884,6 @@ local function createRenderer(
 			rounded(rightLight, 2)
 
 			table.insert(finalObjects, object)
-
-			local roadsideCollisionbox = createDebugBox(
-				root,
-				`RoadsideCollisionbox_{index}`,
-				Color3.fromRGB(255, 56, 56),
-				820
-			)
-			table.insert(roadsideCollisionboxes, roadsideCollisionbox)
 		end
 	end
 
@@ -956,8 +947,6 @@ local function createRenderer(
 		rows = rows,
 		finalObjects = finalObjects,
 		finalObjectVisibleCount = 0,
-		roadsideCollisionboxes = roadsideCollisionboxes,
-		roadsideCollisionboxVisibleCount = 0,
 		lastSignature = nil,
 		car = car,
 		carBottom = carBottom or 0.93,
@@ -1329,8 +1318,7 @@ local function placeClippedObject(
 	heightScale: number,
 	clipY: number,
 	collisionboxWidthScale: number?,
-	collisionboxHeightScale: number?,
-	collisionboxCenterX: number?
+	collisionboxHeightScale: number?
 ): boolean
 	local widthPx = widthScale * WIDTH
 	local heightPx = heightScale * HEIGHT
@@ -1370,8 +1358,7 @@ local function placeClippedObject(
 		enabled: boolean,
 		boxWidthScale: number?,
 		boxHeightScale: number?,
-		zIndex: number,
-		boxCenterX: number?
+		zIndex: number
 	)
 		local box = object:FindFirstChild(name)
 		if not box or not box:IsA("GuiObject") then
@@ -1384,9 +1371,8 @@ local function placeClippedObject(
 
 		local boxWidthPx = boxWidthScale * WIDTH
 		local boxHeightPx = boxHeightScale * HEIGHT
-		local centerX = boxCenterX or x
-		local boxLeftX = centerX - boxWidthPx / 2
-		local boxRightX = centerX + boxWidthPx / 2
+		local boxLeftX = x - boxWidthPx / 2
+		local boxRightX = x + boxWidthPx / 2
 		local boxTopY = bottomY - boxHeightPx
 		local boxVisibleLeftX = math.max(boxLeftX, visibleLeftX)
 		local boxVisibleRightX = math.min(boxRightX, visibleRightX)
@@ -1420,47 +1406,9 @@ local function placeClippedObject(
 		useCollisionboxDebug,
 		collisionboxWidthScale,
 		collisionboxHeightScale or heightScale,
-		object.ZIndex + 5,
-		collisionboxCenterX
+		object.ZIndex + 5
 	)
 	object.Visible = true
-	return true
-end
-
-local function placeScreenDebugBox(
-	box: GuiObject,
-	centerX: number,
-	bottomY: number,
-	widthScale: number,
-	heightScale: number,
-	zIndex: number
-)
-	local widthPx = widthScale * WIDTH
-	local heightPx = heightScale * HEIGHT
-	local leftX = centerX - widthPx / 2
-	local rightX = centerX + widthPx / 2
-	local topY = bottomY - heightPx
-	local visibleLeftX = math.max(leftX, SCREEN_MIN_X)
-	local visibleRightX = math.min(rightX, SCREEN_MAX_X)
-	local visibleTopY = math.max(topY, SCREEN_MIN_Y)
-	local visibleBottomY = math.min(bottomY, SCREEN_MAX_Y)
-	local visibleWidth = visibleRightX - visibleLeftX
-	local visibleHeight = visibleBottomY - visibleTopY
-	if visibleWidth <= 0 or visibleHeight <= 0 then
-		box.Visible = false
-		return false
-	end
-
-	box.Position = UDim2.fromScale(visibleLeftX / WIDTH, visibleTopY / HEIGHT)
-	box.Size = UDim2.fromScale(visibleWidth / WIDTH, visibleHeight / HEIGHT)
-	box.ZIndex = zIndex
-	local debugLineZIndex = zIndex + 1
-	for _, child in box:GetChildren() do
-		if child:IsA("GuiObject") then
-			child.ZIndex = debugLineZIndex
-		end
-	end
-	box.Visible = true
 	return true
 end
 
@@ -1797,6 +1745,7 @@ local function render(renderer, state)
 					spriteSizeScale(spriteDef.width, spriteDef.height, scale, roadWidthSetting)
 				object.ZIndex = objectZIndex(drawLayer)
 				setSpriteObject(object, spriteData, mode)
+				local collisionboxHeight = math.min(height, COLLISION_DEBUG_STRIP_HEIGHT_PX / HEIGHT)
 				if
 					placeClippedObject(
 						object,
@@ -1804,7 +1753,9 @@ local function render(renderer, state)
 						spriteY,
 						width,
 						height,
-						projected.clip
+						projected.clip,
+						width,
+						collisionboxHeight
 					)
 				then
 					drawLayer += 1
@@ -1847,54 +1798,6 @@ local function render(renderer, state)
 	setPlayerCarZIndex(renderer.car, playerDrawZIndex)
 	local playerBounce =
 		RacerConfig.playerBounce(position, speed / RacerConfig.MaxSpeed, HEIGHT / 480)
-
-	local roadsideCollisionboxCursor = 0
-	if RacerConfig.isFinalLike(mode) and useCollisionboxDebug and playerProjected then
-		local scale = playerProjected.p1.scale
-		local collisionBottomY = playerBottomY + playerBounce
-		for _, spriteData in RacerConfig.spritesForSegment(mode, playerSegmentIndex) do
-			if roadsideCollisionboxCursor >= #renderer.roadsideCollisionboxes then
-				break
-			end
-			local spriteWidthWorld = spriteData.definition.width * RacerConfig.SpriteScale
-			local spriteCenterWorld = RacerConfig.roadsideSpriteCenter(spriteData)
-			local playerHalfWidth = RacerConfig.Traffic.PlayerWidth / 2
-			local collisionMinWorld = spriteCenterWorld - spriteWidthWorld / 2 - playerHalfWidth
-			local collisionMaxWorld = spriteCenterWorld + spriteWidthWorld / 2 + playerHalfWidth
-			if spriteData.offset > 0 then
-				collisionMinWorld = math.max(collisionMinWorld, 1)
-			else
-				collisionMaxWorld = math.min(collisionMaxWorld, -1)
-			end
-			local collisionboxWidthWorld = math.max(0, collisionMaxWorld - collisionMinWorld)
-			if collisionboxWidthWorld > 0 then
-				local collisionboxCenterWorld = (collisionMinWorld + collisionMaxWorld) / 2
-				local collisionboxX = playerProjected.p1.x
-					+ scale * collisionboxCenterWorld * roadWidthSetting * WIDTH / 2
-				local collisionboxWidth =
-					collisionboxWidthWorld * scale * roadWidthSetting / 2
-				local nextCursor = roadsideCollisionboxCursor + 1
-				local collisionbox = renderer.roadsideCollisionboxes[nextCursor]
-				if
-					placeScreenDebugBox(
-						collisionbox,
-						collisionboxX,
-						collisionBottomY,
-						collisionboxWidth,
-						playerHeight,
-						playerDrawZIndex + 7
-					)
-				then
-					roadsideCollisionboxCursor = nextCursor
-				end
-			end
-		end
-	end
-	for index = roadsideCollisionboxCursor + 1, renderer.roadsideCollisionboxVisibleCount do
-		renderer.roadsideCollisionboxes[index].Visible = false
-	end
-	renderer.roadsideCollisionboxVisibleCount = roadsideCollisionboxCursor
-
 	renderer.car.BackgroundColor3 = playerSprite.color
 	renderer.car.BackgroundTransparency = 0
 	renderer.car.Size = UDim2.fromScale(playerWidth, playerHeight)
@@ -1931,8 +1834,9 @@ local function render(renderer, state)
 	end
 	local playerCollisionbox = renderer.car:FindFirstChild("Collisionbox")
 	if playerCollisionbox and playerCollisionbox:IsA("GuiObject") then
-		playerCollisionbox.Position = UDim2.new(0.5, -2, 0, 0)
-		playerCollisionbox.Size = UDim2.new(0, 4, 1, 0)
+		local collisionOverlap = RacerConfig.Traffic.CollisionOverlap
+		playerCollisionbox.Position = UDim2.fromScale((1 - collisionOverlap) / 2, 0)
+		playerCollisionbox.Size = UDim2.fromScale(collisionOverlap, 1)
 		playerCollisionbox.ZIndex = playerDrawZIndex + 7
 		for _, child in playerCollisionbox:GetChildren() do
 			if child:IsA("GuiObject") then

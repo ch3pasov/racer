@@ -1073,12 +1073,12 @@ require(
 require(
     r'local\s+collisionboxWidth\s*=\s*width\s*\*\s*RacerConfig\.Traffic\.CollisionOverlap.*?placeClippedObject\(\s*object,\s*x,\s*y,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth',
     CLIENT,
-    "debug traffic collisionboxes must use the original NPC collision overlap window",
+    "debug traffic hitbox outlines must use the original NPC collision overlap window",
 )
 require(
-    r"for\s+_,\s*spriteData\s+in\s+RacerConfig\.spritesForSegment\(mode,\s*playerSegmentIndex\)\s+do.*?local\s+playerHalfWidth\s*=\s*RacerConfig\.Traffic\.PlayerWidth\s*/\s*2.*?if\s+spriteData\.offset\s*>\s*0\s*then\s*collisionMinWorld\s*=\s*math\.max\(collisionMinWorld,\s*1\).*?else\s*collisionMaxWorld\s*=\s*math\.min\(collisionMaxWorld,\s*-1\).*?placeScreenDebugBox\(\s*collisionbox,\s*collisionboxX,\s*collisionBottomY,\s*collisionboxWidth,\s*playerHeight",
+    r"local\s+collisionboxHeight\s*=\s*math\.min\(height,\s*COLLISION_DEBUG_STRIP_HEIGHT_PX\s*/\s*HEIGHT\).*?placeClippedObject\(\s*object,\s*spriteX,\s*spriteY,\s*width,\s*height,\s*projected\.clip,\s*width,\s*collisionboxHeight",
     CLIENT,
-    "debug roadside collisionbox overlay must show the current-segment off-road player-center collision zone",
+    "debug roadside collisionbox outlines must use the original full sprite width as a contact strip",
 )
 require(
     r"function\s+RacerConfig\.trafficOffsetDelta\(.*?local\s+carWidth\s*=\s*item\.width.*?RacerMath\.overlap\(\s*playerX,\s*RacerConfig\.Traffic\.PlayerWidth,\s*item\.offset,\s*carWidth,\s*1\.2",
@@ -1297,12 +1297,9 @@ for token in [
     "createCollisionbox(car, PLAYER_CAR_Z_INDEX + 7)",
     'child.Name ~= "Texture" and not isDebugBox(child.Name)',
     "playerSpritebox.Visible = RacerConfig.isFinalLike(mode) and useSpriteboxDebug",
-    "playerCollisionbox.Position = UDim2.new(0.5, -2, 0, 0)",
-    "playerCollisionbox.Size = UDim2.new(0, 4, 1, 0)",
     "playerCollisionbox.Visible = RacerConfig.isFinalLike(mode) and useCollisionboxDebug",
     "local boxVisibleLeftX = math.max(boxLeftX, visibleLeftX)",
     "local boxVisibleRightX = math.min(boxRightX, visibleRightX)",
-    "local centerX = boxCenterX or x",
     "boxVisibleWidth / visibleWidth",
     "boxVisibleHeight / visibleHeight",
     "local debugLineZIndex = zIndex + 1",
