@@ -2228,7 +2228,15 @@ local function updateFullViewportSize()
 			settingsButton.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 40)
 			settingsButton.Size = UDim2.fromOffset(162, 34)
 			settingsButton.TextSize = 14
-			settingsPanel.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 80)
+			settingsPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+			settingsPanel.Position = UDim2.fromOffset(
+				math.floor(absoluteSize.X / 2 + 0.5),
+				math.floor(absoluteSize.Y / 2 + 0.5)
+			)
+			settingsPanel.Size = UDim2.fromOffset(
+				math.min(300, absoluteSize.X - MOBILE_HUD_MARGIN * 2),
+				math.min(430, absoluteSize.Y - MOBILE_HUD_MARGIN * 2)
+			)
 		else
 			exitButton.Position = UDim2.new(1, -18, 0, 18)
 			exitButton.Size = UDim2.fromOffset(104, 42)
@@ -2239,7 +2247,9 @@ local function updateFullViewportSize()
 			settingsButton.Position = UDim2.new(1, -18, 0, 66)
 			settingsButton.Size = UDim2.fromOffset(104, 42)
 			settingsButton.TextSize = 16
+			settingsPanel.AnchorPoint = Vector2.new(1, 0)
 			settingsPanel.Position = UDim2.new(1, -18, 0, 114)
+			settingsPanel.Size = UDim2.fromOffset(238, 430)
 		end
 	end
 	if mobileLeftButton and mobileRightButton and mobileBrakeButton and mobileGasButton then
