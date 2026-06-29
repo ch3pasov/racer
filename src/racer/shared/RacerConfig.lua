@@ -65,7 +65,15 @@ RacerConfig.Modes = {
 	},
 }
 RacerConfig.Modes.v5 = derive(RacerConfig.Modes.final, {
+	codeName = "mobile-controls",
+	mobileControls = true,
 	v5 = true,
+})
+RacerConfig.Modes.v6 = derive(RacerConfig.Modes.v5, {
+	codeName = "racer-lab",
+	labLeaderboards = true,
+	liveBillboards = true,
+	v6 = true,
 })
 
 function RacerConfig.isFinalLike(mode: string): boolean
@@ -104,11 +112,20 @@ RacerConfig.Screens = {
 	},
 	{
 		Id = "v5",
-		Name = "v5 Lab",
+		Name = "v5 Mobile Controls",
 		Mode = "v5",
 		Position = Vector3.new(0, 0, 44),
 		Color = Color3.fromRGB(134, 240, 150),
 	},
+	--[[
+	{
+		Id = "v6",
+		Name = "v6 Lab",
+		Mode = "v6",
+		Position = Vector3.new(36, 0, 44),
+		Color = Color3.fromRGB(255, 221, 78),
+	},
+	]]
 }
 
 RacerConfig.Step = 1 / RacerConfig.Fps
@@ -687,6 +704,7 @@ RacerConfig.Tracks = {
 	hills = buildHillsTrack(),
 	final = finalTrack,
 	v5 = finalTrack,
+	v6 = finalTrack,
 }
 
 RacerConfig.V5Junctions = {
@@ -698,7 +716,7 @@ RacerConfig.V5Junctions = {
 RacerConfig.V5JunctionTrafficBuffer = 8
 
 function RacerConfig.junctionForSegment(mode: string, segmentIndex: number, buffer: number?): string?
-	if mode ~= "v5" then
+	if mode ~= "v6" then
 		return nil
 	end
 	local segmentCount = RacerConfig.segmentCount(mode)
@@ -818,10 +836,12 @@ RacerConfig.Traffic.Cars = RacerConfig.buildTraffic("final", 1701)
 RacerConfig.SpriteObjects = {
 	final = finalSpriteObjects,
 	v5 = shallowArrayCopy(finalSpriteObjects),
+	v6 = shallowArrayCopy(finalSpriteObjects),
 }
 RacerConfig.SpritesBySegment = {
 	final = {},
 	v5 = {},
+	v6 = {},
 }
 
 function RacerConfig.segmentCount(mode: string): number

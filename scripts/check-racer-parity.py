@@ -298,12 +298,21 @@ for mode, expected_flags in expected_mode_flags.items():
 
 for token in [
     "RacerConfig.Modes.v5 = derive(RacerConfig.Modes.final",
+    'codeName = "mobile-controls"',
+    "mobileControls = true",
+    "RacerConfig.Modes.v6 = derive(RacerConfig.Modes.v5",
+    'codeName = "racer-lab"',
+    "labLeaderboards = true",
+    'Name = "v5 Mobile Controls"',
+    'Name = "v6 Lab"',
     "v5 = finalTrack",
+    "v6 = finalTrack",
     "local finalSpriteObjects = RacerConfig.buildSpriteObjects(\"final\", 2401)",
     "v5 = shallowArrayCopy(finalSpriteObjects)",
+    "v6 = shallowArrayCopy(finalSpriteObjects)",
 ]:
     if token not in CONFIG:
-        fail(f"v5 must explicitly inherit v4 final before adding v5-only behavior: {token}")
+        fail(f"v5/v6 must explicitly inherit earlier racer versions before adding version-only behavior: {token}")
 
 for token in [
     "addStraight(track, ROAD.LENGTH.SHORT)",
