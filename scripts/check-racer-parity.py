@@ -301,19 +301,45 @@ for token in [
     'codeName = "mobile-controls"',
     "mobileControls = true",
     "RacerConfig.Modes.v6 = derive(RacerConfig.Modes.v5",
-    'codeName = "racer-lab"',
-    "labLeaderboards = true",
+    'codeName = "driver-occupants"',
+    "driverOccupants = true",
+    "RacerConfig.Modes.v7 = derive(RacerConfig.Modes.v6",
+    'codeName = "record-boards"',
+    "recordBoards = true",
     "function RacerConfig.isV5Plus(mode: string): boolean",
+    "function RacerConfig.hasDriverOccupants(mode: string): boolean",
+    "function RacerConfig.hasRecordBoards(mode: string): boolean",
     'Name = "v5 Mobile Controls"',
-    'Name = "v6 Lab"',
+    'Name = "v6 Driver Occupants"',
+    'Name = "v7 Record Boards"',
     "v5 = finalTrack",
     "v6 = finalTrack",
+    "v7 = finalTrack",
     "local finalSpriteObjects = RacerConfig.buildSpriteObjects(\"final\", 2401)",
     "v5 = shallowArrayCopy(finalSpriteObjects)",
     "v6 = shallowArrayCopy(finalSpriteObjects)",
+    "v7 = shallowArrayCopy(finalSpriteObjects)",
 ]:
     if token not in CONFIG:
-        fail(f"v5/v6 must explicitly inherit earlier racer versions before adding version-only behavior: {token}")
+        fail(f"v5/v6/v7 must explicitly inherit earlier racer versions before adding version-only behavior: {token}")
+
+for token in [
+    'ReplicatedStorage:WaitForChild("RacerV7BillboardText")',
+    "RacerConfig.hasDriverOccupants(mode) and playerHasTexture",
+    "RacerConfig.hasRecordBoards(mode)",
+]:
+    if token not in CLIENT:
+        fail(f"client must gate driver and record-board features by version flags: {token}")
+
+for token in [
+    'recordBillboardText.Name = "RacerV7BillboardText"',
+    'DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")',
+    'DataStoreService:GetDataStore("RacerV7PersonalRunsV1")',
+    "not RacerConfig.hasRecordBoards(session.definition.Mode)",
+    "createV7Leaderboards()",
+]:
+    if token not in SERVER:
+        fail(f"server record boards must belong to v7 only: {token}")
 
 for token in [
     "addStraight(track, ROAD.LENGTH.SHORT)",

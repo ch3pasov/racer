@@ -70,10 +70,15 @@ RacerConfig.Modes.v5 = derive(RacerConfig.Modes.final, {
 	v5 = true,
 })
 RacerConfig.Modes.v6 = derive(RacerConfig.Modes.v5, {
-	codeName = "racer-lab",
-	labLeaderboards = true,
-	liveBillboards = true,
+	codeName = "driver-occupants",
+	driverOccupants = true,
 	v6 = true,
+})
+RacerConfig.Modes.v7 = derive(RacerConfig.Modes.v6, {
+	codeName = "record-boards",
+	recordBoards = true,
+	liveBillboards = true,
+	v7 = true,
 })
 
 function RacerConfig.isFinalLike(mode: string): boolean
@@ -84,6 +89,16 @@ end
 function RacerConfig.isV5Plus(mode: string): boolean
 	local definition = RacerConfig.Modes[mode]
 	return definition ~= nil and definition.v5 == true
+end
+
+function RacerConfig.hasDriverOccupants(mode: string): boolean
+	local definition = RacerConfig.Modes[mode]
+	return definition ~= nil and definition.driverOccupants == true
+end
+
+function RacerConfig.hasRecordBoards(mode: string): boolean
+	local definition = RacerConfig.Modes[mode]
+	return definition ~= nil and definition.recordBoards == true
 end
 
 RacerConfig.Screens = {
@@ -119,18 +134,23 @@ RacerConfig.Screens = {
 		Id = "v5",
 		Name = "v5 Mobile Controls",
 		Mode = "v5",
-		Position = Vector3.new(0, 0, 44),
+		Position = Vector3.new(-36, 0, 44),
 		Color = Color3.fromRGB(134, 240, 150),
 	},
-	--[[
 	{
 		Id = "v6",
-		Name = "v6 Lab",
+		Name = "v6 Driver Occupants",
 		Mode = "v6",
+		Position = Vector3.new(0, 0, 44),
+		Color = Color3.fromRGB(108, 221, 205),
+	},
+	{
+		Id = "v7",
+		Name = "v7 Record Boards",
+		Mode = "v7",
 		Position = Vector3.new(36, 0, 44),
 		Color = Color3.fromRGB(255, 221, 78),
 	},
-	]]
 }
 
 RacerConfig.Step = 1 / RacerConfig.Fps
@@ -710,6 +730,7 @@ RacerConfig.Tracks = {
 	final = finalTrack,
 	v5 = finalTrack,
 	v6 = finalTrack,
+	v7 = finalTrack,
 }
 
 RacerConfig.V5Junctions = {
@@ -721,20 +742,6 @@ RacerConfig.V5Junctions = {
 RacerConfig.V5JunctionTrafficBuffer = 8
 
 function RacerConfig.junctionForSegment(mode: string, segmentIndex: number, buffer: number?): string?
-	if mode ~= "v6" then
-		return nil
-	end
-	local segmentCount = RacerConfig.segmentCount(mode)
-	local padding = buffer or 0
-	for _, junction in RacerConfig.V5Junctions do
-		local startIndex = junction.segment - padding
-		local endIndex = junction.segment + junction.length + padding
-		for index = startIndex, endIndex do
-			if ((index % segmentCount) + segmentCount) % segmentCount == segmentIndex then
-				return junction.kind
-			end
-		end
-	end
 	return nil
 end
 
@@ -842,11 +849,13 @@ RacerConfig.SpriteObjects = {
 	final = finalSpriteObjects,
 	v5 = shallowArrayCopy(finalSpriteObjects),
 	v6 = shallowArrayCopy(finalSpriteObjects),
+	v7 = shallowArrayCopy(finalSpriteObjects),
 }
 RacerConfig.SpritesBySegment = {
 	final = {},
 	v5 = {},
 	v6 = {},
+	v7 = {},
 }
 
 function RacerConfig.segmentCount(mode: string): number

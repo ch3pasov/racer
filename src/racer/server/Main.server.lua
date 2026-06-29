@@ -143,10 +143,10 @@ perfHistory.Name = "History"
 perfHistory.Value = ""
 perfHistory.Parent = perfFolder
 
-local v5BillboardText = Instance.new("StringValue")
-v5BillboardText.Name = "RacerV6BillboardText"
-v5BillboardText.Value = ""
-v5BillboardText.Parent = ReplicatedStorage
+local recordBillboardText = Instance.new("StringValue")
+recordBillboardText.Name = "RacerV7BillboardText"
+recordBillboardText.Value = ""
+recordBillboardText.Parent = ReplicatedStorage
 
 local SPAWN_CFRAME = CFrame.new(0, 4, 22)
 local LOBBY_PLACE_ID = GeneratedPlaceIds.LobbyPlaceId or 0
@@ -173,9 +173,9 @@ local BACKGROUND_SPEEDS = {
 
 local sessions = {}
 local perfLines = {}
-local v5LeaderboardLabels = {}
-local v5GlobalStore = DataStoreService:GetOrderedDataStore("RacerV6GlobalLapMsV1")
-local v5PersonalStore = DataStoreService:GetDataStore("RacerV6PersonalRunsV1")
+local recordLeaderboardLabels = {}
+local recordGlobalStore = DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")
+local recordPersonalStore = DataStoreService:GetDataStore("RacerV7PersonalRunsV1")
 
 local function formatLapTime(seconds: number): string
 	local minutes = math.floor(seconds / 60)
@@ -198,16 +198,16 @@ local function formatLeaderboard(title: string, rows): string
 	return table.concat(lines, "\n")
 end
 
-local function setV5LeaderboardText(kind: string, text: string)
-	local label = v5LeaderboardLabels[kind]
+local function setRecordLeaderboardText(kind: string, text: string)
+	local label = recordLeaderboardLabels[kind]
 	if label then
 		label.Text = text
 	end
 end
 
-local function setV5BillboardTop(rows)
+local function setRecordBillboardTop(rows)
 	local top = rows and rows[1]
-	v5BillboardText.Value = if top
+	recordBillboardText.Value = if top
 		then `#1 {top.name} {formatLapTime(top.time)}`
 		else ""
 end
@@ -463,7 +463,7 @@ end
 
 local function readPersonalTop(player: Player)
 	local ok, raw = pcall(function()
-		return v5PersonalStore:GetAsync(tostring(player.UserId))
+		return recordPersonalStore:GetAsync(tostring(player.UserId))
 	end)
 	if not ok then
 		return {}
@@ -483,7 +483,7 @@ end
 
 local function readGlobalTop(limit: number)
 	local ok, pages = pcall(function()
-		return v5GlobalStore:GetSortedAsync(true, limit)
+		return recordGlobalStore:GetSortedAsync(true, limit)
 	end)
 	if not ok then
 		return {}
@@ -525,13 +525,13 @@ local function friendIdSet(player: Player)
 	return ids
 end
 
-local function refreshV5Leaderboards(player: Player?)
+local function refreshRecordLeaderboards(player: Player?)
 	if not player then
 		local globalRows = readGlobalTop(10)
-		setV5LeaderboardText("self", leaderboardEmpty("v6 Your Top 10"))
-		setV5LeaderboardText("friends", leaderboardEmpty("v6 Friends Top 10"))
-		setV5LeaderboardText("global", formatLeaderboard("v6 Global Top 10", globalRows))
-		setV5BillboardTop(globalRows)
+		setRecordLeaderboardText("self", leaderboardEmpty("v7 Your Top 10"))
+		setRecordLeaderboardText("friends", leaderboardEmpty("v7 Friends Top 10"))
+		setRecordLeaderboardText("global", formatLeaderboard("v7 Global Top 10", globalRows))
+		setRecordBillboardTop(globalRows)
 		return
 	end
 
@@ -552,22 +552,22 @@ local function refreshV5Leaderboards(player: Player?)
 		for index = 1, math.min(10, #globalRows) do
 			table.insert(globalTopTen, globalRows[index])
 		end
-		setV5LeaderboardText("self", formatLeaderboard("v6 Your Top 10", selfRows))
-		setV5LeaderboardText("friends", formatLeaderboard("v6 Friends Top 10", friendRows))
-		setV5LeaderboardText("global", formatLeaderboard("v6 Global Top 10", globalTopTen))
-		setV5BillboardTop(globalTopTen)
+		setRecordLeaderboardText("self", formatLeaderboard("v7 Your Top 10", selfRows))
+		setRecordLeaderboardText("friends", formatLeaderboard("v7 Friends Top 10", friendRows))
+		setRecordLeaderboardText("global", formatLeaderboard("v7 Global Top 10", globalTopTen))
+		setRecordBillboardTop(globalTopTen)
 	end)
 end
 
-local function recordV5Lap(session, player: Player, lapTime: number)
-	if session.definition.Mode ~= "v6" or lapTime <= 0 then
+local function recordLapForRecordBoards(session, player: Player, lapTime: number)
+	if not RacerConfig.hasRecordBoards(session.definition.Mode) or lapTime <= 0 then
 		return
 	end
 	local lapMs = math.floor(lapTime * 1000 + 0.5)
-	setV5LeaderboardText("self", `v6 Your Top 10\nSaving {formatLapTime(lapTime)}...`)
+	setRecordLeaderboardText("self", `v7 Your Top 10\nSaving {formatLapTime(lapTime)}...`)
 	task.spawn(function()
 		local globalOk, globalErr = pcall(function()
-			v5GlobalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
+			recordGlobalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
 				if typeof(oldValue) == "number" and oldValue > 0 and oldValue <= lapMs then
 					return oldValue
 				end
@@ -575,7 +575,7 @@ local function recordV5Lap(session, player: Player, lapTime: number)
 			end)
 		end)
 		local personalOk, personalErr = pcall(function()
-			v5PersonalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
+			recordPersonalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
 				local runs = decodePersonalRuns(oldValue)
 				table.insert(runs, {
 					time = lapTime,
@@ -591,10 +591,10 @@ local function recordV5Lap(session, player: Player, lapTime: number)
 			end)
 		end)
 		if not globalOk or not personalOk then
-			warn(`[RacerLab] v6 leaderboard save failed global={globalOk} {globalErr} personal={personalOk} {personalErr}`)
-			setV5LeaderboardText("self", `v6 Your Top 10\nSave failed\n{formatLapTime(lapTime)}`)
+			warn(`[RacerLab] v7 leaderboard save failed global={globalOk} {globalErr} personal={personalOk} {personalErr}`)
+			setRecordLeaderboardText("self", `v7 Your Top 10\nSave failed\n{formatLapTime(lapTime)}`)
 		end
-		refreshV5Leaderboards(player)
+		refreshRecordLeaderboards(player)
 	end)
 end
 
@@ -611,8 +611,8 @@ local function exitScreen(player: Player, message: string?)
 	session.activePlayer = nil
 	resetRun(session)
 	session.values.Status.Value = message or `{session.definition.Name} ready.`
-	if session.definition.Mode == "v6" then
-		refreshV5Leaderboards(nil)
+	if RacerConfig.hasRecordBoards(session.definition.Mode) then
+		refreshRecordLeaderboards(nil)
 	end
 	actionEvent:FireClient(player, "Exited")
 end
@@ -666,8 +666,8 @@ local function enterScreen(player: Player, screenId: string)
 	player:SetAttribute("RacerScreenId", session.definition.Id)
 	session.values.Status.Value = `{player.DisplayName} is playing {session.definition.Name}.`
 	publishState(session)
-	if session.definition.Mode == "v6" then
-		refreshV5Leaderboards(player)
+	if RacerConfig.hasRecordBoards(session.definition.Mode) then
+		refreshRecordLeaderboards(player)
 	end
 	actionEvent:FireClient(player, "Entered", session.definition.Name)
 end
@@ -824,14 +824,14 @@ local function createVersionBadge()
 	padding.Parent = label
 end
 
-local function createV5LeaderboardBoard(
+local function createV7LeaderboardBoard(
 	kind: string,
 	title: string,
 	position: Vector3,
 	color: Color3
 )
 	local board = createPart(
-		`V5Leaderboard_{kind}`,
+		`V7Leaderboard_{kind}`,
 		Vector3.new(14, 8, 0.3),
 		CFrame.new(position) * CFrame.Angles(0, math.rad(180), 0),
 		Color3.fromRGB(12, 16, 24),
@@ -841,7 +841,7 @@ local function createV5LeaderboardBoard(
 	board.CanCollide = false
 
 	local surfaceGui = Instance.new("SurfaceGui")
-	surfaceGui.Name = `V5LeaderboardGui_{kind}`
+	surfaceGui.Name = `V7LeaderboardGui_{kind}`
 	surfaceGui.Face = Enum.NormalId.Front
 	surfaceGui.LightInfluence = 0
 	surfaceGui.PixelsPerStud = 28
@@ -869,13 +869,13 @@ local function createV5LeaderboardBoard(
 	padding.PaddingTop = UDim.new(0, 10)
 	padding.Parent = label
 
-	v5LeaderboardLabels[kind] = label
+	recordLeaderboardLabels[kind] = label
 end
 
-local function createV5Leaderboards()
-	createV5LeaderboardBoard("self", "v6 Your Top 10", Vector3.new(-24, 5.2, 66), Color3.fromRGB(236, 240, 244))
-	createV5LeaderboardBoard("friends", "v6 Friends Top 10", Vector3.new(0, 5.2, 66), Color3.fromRGB(134, 240, 150))
-	createV5LeaderboardBoard("global", "v6 Global Top 10", Vector3.new(24, 5.2, 66), Color3.fromRGB(255, 221, 78))
+local function createV7Leaderboards()
+	createV7LeaderboardBoard("self", "v7 Your Top 10", Vector3.new(-24, 5.2, 66), Color3.fromRGB(236, 240, 244))
+	createV7LeaderboardBoard("friends", "v7 Friends Top 10", Vector3.new(0, 5.2, 66), Color3.fromRGB(134, 240, 150))
+	createV7LeaderboardBoard("global", "v7 Global Top 10", Vector3.new(24, 5.2, 66), Color3.fromRGB(255, 221, 78))
 end
 
 local function buildLab()
@@ -914,7 +914,7 @@ local function buildLab()
 	end
 	createLobbyPortal()
 	createVersionBadge()
-	createV5Leaderboards()
+	createV7Leaderboards()
 end
 
 local function updateRacer(session, dt: number)
@@ -1052,7 +1052,7 @@ local function updateRacer(session, dt: number)
 			if session.lastLapTime <= session.fastLapTime then
 				session.fastLapTime = session.lastLapTime
 			end
-			recordV5Lap(session, session.activePlayer, session.lastLapTime)
+			recordLapForRecordBoards(session, session.activePlayer, session.lastLapTime)
 		elseif session.lapStarted then
 			session.currentLapTime += dt
 		elseif session.position > playerZ then
@@ -1188,8 +1188,8 @@ Players.PlayerRemoving:Connect(function(player)
 		session.activePlayer = nil
 		resetRun(session)
 		session.values.Status.Value = `{session.definition.Name} ready.`
-		if session.definition.Mode == "v6" then
-			refreshV5Leaderboards(nil)
+		if RacerConfig.hasRecordBoards(session.definition.Mode) then
+			refreshRecordLeaderboards(nil)
 		end
 	end
 end)
@@ -1209,7 +1209,7 @@ task.spawn(function()
 end)
 
 buildLab()
-refreshV5Leaderboards(nil)
+refreshRecordLeaderboards(nil)
 for _, session in sessions do
 	publishState(session)
 end

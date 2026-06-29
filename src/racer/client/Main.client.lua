@@ -16,7 +16,7 @@ local player = Players.LocalPlayer
 local actionEvent = ReplicatedStorage:WaitForChild("RacerAction")
 local inputEvent = ReplicatedStorage:WaitForChild("RacerInput")
 local perfLogEvent = ReplicatedStorage:WaitForChild("RacerPerfLog")
-local v6BillboardText = ReplicatedStorage:WaitForChild("RacerV6BillboardText") :: StringValue
+local v7BillboardText = ReplicatedStorage:WaitForChild("RacerV7BillboardText") :: StringValue
 local statesFolder = ReplicatedStorage:WaitForChild("RacerStates")
 
 local WIDTH = RacerConfig.Width
@@ -1206,8 +1206,8 @@ local function setSpriteObject(object, spriteData, mode: string)
 	end
 	local liveText = detailRoot:FindFirstChild("LiveBillboardText")
 	if liveText and liveText:IsA("TextLabel") then
-		local liveCopy = v6BillboardText.Value
-		local showLive = mode == "v6"
+		local liveCopy = v7BillboardText.Value
+		local showLive = RacerConfig.hasRecordBoards(mode)
 			and spriteData.definition.kind == "billboard"
 			and liveCopy ~= ""
 		liveText.Text = liveCopy
@@ -1957,7 +1957,7 @@ local function render(renderer, state)
 		end
 		playerCollisionbox.Visible = RacerConfig.isFinalLike(mode) and useCollisionboxDebug
 	end
-	local showAvatarPeople = mode == "v6" and playerHasTexture
+	local showAvatarPeople = RacerConfig.hasDriverOccupants(mode) and playerHasTexture
 	local driverAvatar = renderer.car:FindFirstChild("DriverAvatar")
 	if driverAvatar and driverAvatar:IsA("ImageLabel") then
 		local image = thumbnailForUserId(state.activeUserId.Value)
@@ -2005,7 +2005,7 @@ local function renderSignature(state): string
 		if textureArtEnabled() then "textures" else "placeholders",
 		if useSpriteboxDebug then "spriteboxes" else "no-spriteboxes",
 		if useCollisionboxDebug then "collisionboxes" else "no-collisionboxes",
-		v6BillboardText.Value,
+		v7BillboardText.Value,
 		math.floor(state.currentLapTime.Value * 10 + 0.5),
 		math.floor(state.lastLapTime.Value * 10 + 0.5),
 		math.floor(state.fastLapTime.Value * 10 + 0.5),
