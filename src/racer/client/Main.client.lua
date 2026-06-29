@@ -2168,6 +2168,8 @@ local mobileLeftButton: TextButton? = nil
 local mobileRightButton: TextButton? = nil
 local mobileBrakeButton: TextButton? = nil
 local mobileGasButton: TextButton? = nil
+local mobileStatusLeft: TextLabel? = nil
+local mobileStatusRight: TextLabel? = nil
 
 local function useMobileSidePanelLayout(): boolean
 	return UserInputService.TouchEnabled
@@ -2190,22 +2192,29 @@ local function updateFullViewportSize()
 	local viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)
 	local viewportWidth = math.floor(width + 0.5)
 	local viewportHeight = math.floor(height + 0.5)
+	local leftPanelWidth = viewportLeft
+	local rightPanelWidth = absoluteSize.X - viewportLeft - viewportWidth
 	fullViewport.Size = UDim2.fromOffset(viewportWidth, viewportHeight)
 	if activeStatus then
-		local statusWidth = if mobileLayout
-			then math.max(260, viewportWidth - 24)
-			else 640
-		local statusHeight = if mobileLayout then 34 else 42
+		local statusWidth = 640
+		local statusHeight = 42
 		activeStatus.Size = UDim2.fromOffset(math.floor(statusWidth + 0.5), statusHeight)
-		activeStatus.Position = if mobileLayout
-			then UDim2.fromOffset(
-				viewportLeft + math.floor(viewportWidth / 2 + 0.5),
-				viewportTop + MOBILE_HUD_MARGIN
-			)
-			else UDim2.fromOffset(
-				math.floor(absoluteSize.X / 2 + 0.5),
-				viewportTop + ACTIVE_STATUS_MARGIN_TOP
-			)
+		activeStatus.Position = UDim2.fromOffset(
+			math.floor(absoluteSize.X / 2 + 0.5),
+			viewportTop + ACTIVE_STATUS_MARGIN_TOP
+		)
+	end
+	if mobileStatusLeft and mobileStatusRight then
+		local leftStatusWidth = math.max(96, math.min(260, leftPanelWidth - MOBILE_HUD_MARGIN * 2))
+		local rightStatusWidth = math.max(96, math.min(260, rightPanelWidth - MOBILE_HUD_MARGIN * 2))
+		local mobileStatusHeight = 68
+		mobileStatusLeft.Position = UDim2.fromOffset(MOBILE_HUD_MARGIN, viewportTop + MOBILE_HUD_MARGIN)
+		mobileStatusLeft.Size = UDim2.fromOffset(leftStatusWidth, mobileStatusHeight)
+		mobileStatusRight.Position = UDim2.fromOffset(
+			absoluteSize.X - MOBILE_HUD_MARGIN - rightStatusWidth,
+			viewportTop + MOBILE_HUD_MARGIN + 118
+		)
+		mobileStatusRight.Size = UDim2.fromOffset(rightStatusWidth, mobileStatusHeight)
 	end
 	if exitButton and rejoinButton and settingsButton and settingsPanel then
 		if mobileLayout then
@@ -2234,10 +2243,10 @@ local function updateFullViewportSize()
 		end
 	end
 	if mobileLeftButton and mobileRightButton and mobileBrakeButton and mobileGasButton then
-		local leftPanelCenter = math.max(MOBILE_HUD_MARGIN + 76, viewportLeft / 2)
+		local leftPanelCenter = math.max(MOBILE_HUD_MARGIN + 76, leftPanelWidth / 2)
 		local rightPanelCenter = math.min(
 			absoluteSize.X - MOBILE_HUD_MARGIN - 76,
-			viewportLeft + viewportWidth + (absoluteSize.X - viewportLeft - viewportWidth) / 2
+			viewportLeft + viewportWidth + rightPanelWidth / 2
 		)
 		local bottomY = viewportTop + viewportHeight - MOBILE_HUD_MARGIN
 		if mobileLayout then
@@ -2316,9 +2325,38 @@ local activeStatusSpeed = createActiveStatusField(
 	UDim2.new(0, 108, 1, 0),
 	Enum.TextXAlignment.Right
 )
+
+local function createMobileStatusLabel(name: string, alignment: Enum.TextXAlignment)
+	local label = Instance.new("TextLabel")
+	label.Name = name
+	label.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
+	label.BackgroundTransparency = 0.1
+	label.BorderSizePixel = 0
+	label.Font = Enum.Font.GothamBold
+	label.Text = ""
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.TextSize = 14
+	label.TextWrapped = true
+	label.TextXAlignment = alignment
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.Visible = false
+	label.ZIndex = 255
+	label.Parent = fullScreen
+	local padding = Instance.new("UIPadding")
+	padding.PaddingLeft = UDim.new(0, 10)
+	padding.PaddingRight = UDim.new(0, 10)
+	padding.Parent = label
+	rounded(label, 6)
+	return label
+end
+
+mobileStatusLeft = createMobileStatusLabel("MobileStatusLeft", Enum.TextXAlignment.Left)
+mobileStatusRight = createMobileStatusLabel("MobileStatusRight", Enum.TextXAlignment.Right)
+updateFullViewportSize()
 local worldRenderers = {}
 
 local function updateActiveStatus(state)
+	local mobileLayout = useMobileSidePanelLayout()
 	if state and RacerConfig.isFinalLike(state.mode.Value) then
 		activeStatusSpeed.Text = `{5 * math.round(state.speed.Value / 500)} mph`
 		activeStatusCurrent.Text = `Time: {formatTime(state.currentLapTime.Value)}`
@@ -2330,7 +2368,18 @@ local function updateActiveStatus(state)
 			activeStatusLast.Text = ""
 			activeStatusLast.Visible = false
 		end
-		activeStatus.Visible = true
+		activeStatus.Visible = not mobileLayout
+		if mobileStatusLeft and mobileStatusRight then
+			local lastLap = if state.lastLapTime.Value > 0
+				then `\nLast: {formatTime(state.lastLapTime.Value)}`
+				else ""
+			mobileStatusLeft.Text = `Time: {formatTime(state.currentLapTime.Value)}{lastLap}`
+			mobileStatusRight.Text = `{5 * math.round(state.speed.Value / 500)} mph\nFast: {formatTime(
+				state.fastLapTime.Value
+			)}`
+			mobileStatusLeft.Visible = mobileLayout
+			mobileStatusRight.Visible = mobileLayout
+		end
 	else
 		activeStatusSpeed.Text = ""
 		activeStatusCurrent.Text = ""
@@ -2338,6 +2387,12 @@ local function updateActiveStatus(state)
 		activeStatusFast.Text = ""
 		activeStatusLast.Visible = false
 		activeStatus.Visible = false
+		if mobileStatusLeft and mobileStatusRight then
+			mobileStatusLeft.Text = ""
+			mobileStatusRight.Text = ""
+			mobileStatusLeft.Visible = false
+			mobileStatusRight.Visible = false
+		end
 	end
 end
 
