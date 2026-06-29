@@ -1076,9 +1076,9 @@ require(
     "debug traffic collisionboxes must use the original NPC collision overlap window",
 )
 require(
-    r"local\s+collisionboxHeight\s*=\s*math\.min\(height,\s*COLLISION_DEBUG_STRIP_HEIGHT_PX\s*/\s*HEIGHT\).*?local\s+playerHalfWidth\s*=\s*RacerConfig\.Traffic\.PlayerWidth\s*/\s*2.*?if\s+spriteData\.offset\s*>\s*0\s*then\s*collisionMinWorld\s*=\s*math\.max\(collisionMinWorld,\s*1\).*?else\s*collisionMaxWorld\s*=\s*math\.min\(collisionMaxWorld,\s*-1\).*?placeClippedObject\(\s*object,\s*spriteX,\s*spriteY,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth,\s*collisionboxHeight,\s*collisionboxX",
+    r"for\s+_,\s*spriteData\s+in\s+RacerConfig\.spritesForSegment\(mode,\s*playerSegmentIndex\)\s+do.*?local\s+playerHalfWidth\s*=\s*RacerConfig\.Traffic\.PlayerWidth\s*/\s*2.*?if\s+spriteData\.offset\s*>\s*0\s*then\s*collisionMinWorld\s*=\s*math\.max\(collisionMinWorld,\s*1\).*?else\s*collisionMaxWorld\s*=\s*math\.min\(collisionMaxWorld,\s*-1\).*?placeScreenDebugBox\(\s*collisionbox,\s*collisionboxX,\s*collisionBottomY,\s*collisionboxWidth,\s*playerHeight",
     CLIENT,
-    "debug roadside collisionbox outlines must show the original off-road player-center collision zone",
+    "debug roadside collisionbox overlay must show the current-segment off-road player-center collision zone",
 )
 require(
     r"function\s+RacerConfig\.trafficOffsetDelta\(.*?local\s+carWidth\s*=\s*item\.width.*?RacerMath\.overlap\(\s*playerX,\s*RacerConfig\.Traffic\.PlayerWidth,\s*item\.offset,\s*carWidth,\s*1\.2",
