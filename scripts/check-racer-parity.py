@@ -1071,9 +1071,9 @@ require(
     "roadside rendering and collision must share the same sprite center formula",
 )
 require(
-    r'local\s+playerWidthAtObjectScale\s*=\s*RacerConfig\.Traffic\.PlayerWidth\s*\*\s*scale\s*\*\s*roadWidthSetting\s*/\s*2.*?local\s+collisionboxWidth\s*=\s*\(width\s*\+\s*playerWidthAtObjectScale\)\s*\*\s*RacerConfig\.Traffic\.CollisionOverlap.*?placeClippedObject\(\s*object,\s*x,\s*y,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth',
+    r'local\s+collisionboxWidth\s*=\s*width\s*\*\s*RacerConfig\.Traffic\.CollisionOverlap.*?placeClippedObject\(\s*object,\s*x,\s*y,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth',
     CLIENT,
-    "debug traffic collisionboxes must show the original player-center collision zone",
+    "debug traffic collisionboxes must use the original NPC collision overlap window",
 )
 require(
     r"local\s+collisionboxHeight\s*=\s*math\.min\(height,\s*COLLISION_DEBUG_STRIP_HEIGHT_PX\s*/\s*HEIGHT\).*?local\s+playerHalfWidth\s*=\s*RacerConfig\.Traffic\.PlayerWidth\s*/\s*2.*?if\s+spriteData\.offset\s*>\s*0\s*then\s*collisionMinWorld\s*=\s*math\.max\(collisionMinWorld,\s*1\).*?else\s*collisionMaxWorld\s*=\s*math\.min\(collisionMaxWorld,\s*-1\).*?placeClippedObject\(\s*object,\s*spriteX,\s*spriteY,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth,\s*collisionboxHeight,\s*collisionboxX",
@@ -1297,8 +1297,8 @@ for token in [
     "createCollisionbox(car, PLAYER_CAR_Z_INDEX + 7)",
     'child.Name ~= "Texture" and not isDebugBox(child.Name)',
     "playerSpritebox.Visible = RacerConfig.isFinalLike(mode) and useSpriteboxDebug",
-    "playerCollisionbox.Position = UDim2.new(0.5, -1, 0, 0)",
-    "playerCollisionbox.Size = UDim2.new(0, 2, 1, 0)",
+    "playerCollisionbox.Position = UDim2.new(0.5, -2, 0, 0)",
+    "playerCollisionbox.Size = UDim2.new(0, 4, 1, 0)",
     "playerCollisionbox.Visible = RacerConfig.isFinalLike(mode) and useCollisionboxDebug",
     "local boxVisibleLeftX = math.max(boxLeftX, visibleLeftX)",
     "local boxVisibleRightX = math.min(boxRightX, visibleRightX)",
