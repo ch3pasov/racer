@@ -1841,54 +1841,58 @@ local function render(renderer, state)
 	local playerBounce =
 		RacerConfig.playerBounce(position, speed / RacerConfig.MaxSpeed, HEIGHT / 480)
 	local roadsideCollisionboxCursor = 0
-	if
-		RacerConfig.isFinalLike(mode)
-		and useCollisionboxDebug
-		and playerProjected
-		and renderer.roadsideCollisionboxes
-	then
-		local scale = playerProjected.p1.scale
-		local collisionBottomY = playerBottomY + playerBounce
-		for _, spriteData in RacerConfig.spritesForSegment(mode, playerSegmentIndex) do
-			if roadsideCollisionboxCursor >= #renderer.roadsideCollisionboxes then
-				break
+	if RacerConfig.isFinalLike(mode) and useCollisionboxDebug and renderer.roadsideCollisionboxes then
+		for index = #objectSegments, 1, -1 do
+			local projected = objectSegments[index]
+			local scale = projected.p1.scale
+			local collisionBottomY = projected.p1.y
+			local _, collisionboxHeight =
+				spriteSizeScale(playerSprite.width, playerSprite.height, scale, roadWidthSetting)
+			if projected.index == playerSegmentIndex and playerProjected then
+				collisionBottomY = playerBottomY + playerBounce
+				collisionboxHeight = playerHeight
 			end
-			local spriteWidthWorld = spriteData.definition.width * RacerConfig.SpriteScale
-			local spriteCenterWorld = RacerConfig.roadsideSpriteCenter(spriteData)
-			local playerWidth = RacerConfig.Traffic.PlayerWidth
-			local playerDebugWidth = playerWidth * RacerConfig.Traffic.CollisionOverlap
-			local collisionMinWorld = spriteCenterWorld - spriteWidthWorld / 2 - playerWidth / 2
-			local collisionMaxWorld = spriteCenterWorld + spriteWidthWorld / 2 + playerWidth / 2
-			if spriteData.offset > 0 then
-				collisionMinWorld = math.max(collisionMinWorld, 1)
-			else
-				collisionMaxWorld = math.min(collisionMaxWorld, -1)
-			end
-			local collisionboxMinWorld = collisionMinWorld + playerDebugWidth / 2
-			local collisionboxMaxWorld = collisionMaxWorld - playerDebugWidth / 2
-			local collisionboxWidthWorld =
-				math.max(0, collisionboxMaxWorld - collisionboxMinWorld)
-			if collisionboxWidthWorld > 0 then
-				local collisionboxCenterWorld =
-					(collisionboxMinWorld + collisionboxMaxWorld) / 2
-				local collisionboxX = playerProjected.p1.x
-					+ scale * collisionboxCenterWorld * roadWidthSetting * WIDTH / 2
-				local collisionboxWidth =
-					collisionboxWidthWorld * scale * roadWidthSetting / 2
-				local nextCursor = roadsideCollisionboxCursor + 1
-				if
-					placeScreenDebugBox(
-						renderer.roadsideCollisionboxes[nextCursor],
-						collisionboxX,
-						collisionBottomY,
-						collisionboxWidth,
-						playerHeight,
-						playerDrawZIndex + 9
-					)
-				then
-					roadsideCollisionboxCursor = nextCursor
+			for _, spriteData in RacerConfig.spritesForSegment(mode, projected.index) do
+				if roadsideCollisionboxCursor >= #renderer.roadsideCollisionboxes then
+					break
+				end
+				local spriteWidthWorld = spriteData.definition.width * RacerConfig.SpriteScale
+				local spriteCenterWorld = RacerConfig.roadsideSpriteCenter(spriteData)
+				local playerWidth = RacerConfig.Traffic.PlayerWidth
+				local playerDebugWidth = playerWidth * RacerConfig.Traffic.CollisionOverlap
+				local collisionMinWorld = spriteCenterWorld - spriteWidthWorld / 2 - playerWidth / 2
+				local collisionMaxWorld = spriteCenterWorld + spriteWidthWorld / 2 + playerWidth / 2
+				if spriteData.offset > 0 then
+					collisionMinWorld = math.max(collisionMinWorld, 1)
 				else
-					renderer.roadsideCollisionboxes[nextCursor].Visible = false
+					collisionMaxWorld = math.min(collisionMaxWorld, -1)
+				end
+				local collisionboxMinWorld = collisionMinWorld + playerDebugWidth / 2
+				local collisionboxMaxWorld = collisionMaxWorld - playerDebugWidth / 2
+				local collisionboxWidthWorld =
+					math.max(0, collisionboxMaxWorld - collisionboxMinWorld)
+				if collisionboxWidthWorld > 0 then
+					local collisionboxCenterWorld =
+						(collisionboxMinWorld + collisionboxMaxWorld) / 2
+					local collisionboxX = projected.p1.x
+						+ scale * collisionboxCenterWorld * roadWidthSetting * WIDTH / 2
+					local collisionboxWidth =
+						collisionboxWidthWorld * scale * roadWidthSetting / 2
+					local nextCursor = roadsideCollisionboxCursor + 1
+					if
+						placeScreenDebugBox(
+							renderer.roadsideCollisionboxes[nextCursor],
+							collisionboxX,
+							collisionBottomY,
+							collisionboxWidth,
+							collisionboxHeight,
+							820
+						)
+					then
+						roadsideCollisionboxCursor = nextCursor
+					else
+						renderer.roadsideCollisionboxes[nextCursor].Visible = false
+					end
 				end
 			end
 		end
