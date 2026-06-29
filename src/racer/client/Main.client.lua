@@ -1711,7 +1711,10 @@ local function render(renderer, state)
 						spriteSizeScale(carData.width, carData.height, scale, roadWidthSetting)
 					object.ZIndex = objectZIndex(drawLayer)
 					setTrafficObject(object, carData)
-					local collisionboxWidth = width * RacerConfig.Traffic.CollisionOverlap
+					local playerWidthAtObjectScale =
+						RacerConfig.Traffic.PlayerWidth * scale * roadWidthSetting / 2
+					local collisionboxWidth = (width + playerWidthAtObjectScale)
+						* RacerConfig.Traffic.CollisionOverlap
 					if
 						placeClippedObject(
 							object,
@@ -1855,9 +1858,8 @@ local function render(renderer, state)
 	end
 	local playerCollisionbox = renderer.car:FindFirstChild("Collisionbox")
 	if playerCollisionbox and playerCollisionbox:IsA("GuiObject") then
-		local collisionOverlap = RacerConfig.Traffic.CollisionOverlap
-		playerCollisionbox.Position = UDim2.fromScale((1 - collisionOverlap) / 2, 0)
-		playerCollisionbox.Size = UDim2.fromScale(collisionOverlap, 1)
+		playerCollisionbox.Position = UDim2.new(0.5, -1, 0, 0)
+		playerCollisionbox.Size = UDim2.new(0, 2, 1, 0)
 		playerCollisionbox.ZIndex = playerDrawZIndex + 7
 		for _, child in playerCollisionbox:GetChildren() do
 			if child:IsA("GuiObject") then
