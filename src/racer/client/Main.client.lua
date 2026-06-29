@@ -2400,7 +2400,7 @@ local function updateActiveStatus(state)
 			local lastLap = if state.lastLapTime.Value > 0
 				then `\nLast: {formatTime(state.lastLapTime.Value)}`
 				else ""
-			mobileStatusLeft.Text = `Time: {formatTime(state.currentLapTime.Value)}{lastLap}`
+			mobileStatusLeft.Text = `Time:\n{formatTime(state.currentLapTime.Value)}{lastLap}`
 			mobileStatusRight.Text = `{5 * math.round(state.speed.Value / 500)} mph\nFast: {formatTime(
 				state.fastLapTime.Value
 			)}`
