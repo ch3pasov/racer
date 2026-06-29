@@ -2184,6 +2184,8 @@ local function updateFullViewportSize()
 		return
 	end
 	local mobileLayout = useMobileSidePanelLayout()
+	local state = activeState()
+	local compactSettingsPanel = state ~= nil and RacerConfig.isV5Plus(state.mode.Value)
 	local aspectRatio = RacerConfig.Width / RacerConfig.Height
 	local width = absoluteSize.X
 	local height = width / aspectRatio
@@ -2247,7 +2249,10 @@ local function updateFullViewportSize()
 			)
 			settingsPanel.Size = UDim2.fromOffset(
 				math.min(300, absoluteSize.X - MOBILE_HUD_MARGIN * 2),
-				math.min(430, absoluteSize.Y - MOBILE_HUD_MARGIN * 2)
+				math.min(
+					if compactSettingsPanel then 184 else 430,
+					absoluteSize.Y - MOBILE_HUD_MARGIN * 2
+				)
 			)
 		else
 			exitButton.Position = UDim2.new(1, -18, 0, 18)
@@ -2261,7 +2266,7 @@ local function updateFullViewportSize()
 			settingsButton.TextSize = 16
 			settingsPanel.AnchorPoint = Vector2.new(1, 0)
 			settingsPanel.Position = UDim2.new(1, -18, 0, 114)
-			settingsPanel.Size = UDim2.fromOffset(238, 430)
+			settingsPanel.Size = UDim2.fromOffset(238, if compactSettingsPanel then 184 else 430)
 		end
 	end
 	if mobileLeftButton and mobileRightButton and mobileBrakeButton and mobileGasButton then
@@ -2526,6 +2531,7 @@ local settingRows = {
 local textureToggleLabel: TextButton? = nil
 local spriteboxToggleLabel: TextButton? = nil
 local collisionboxToggleLabel: TextButton? = nil
+local resetButton: TextButton? = nil
 
 local function currentSettingText(row): string
 	local state = activeState()
@@ -2571,11 +2577,36 @@ for index, row in settingRows do
 	plus.MouseButton1Click:Connect(function()
 		actionEvent:FireServer("Setting", row.key, 1)
 	end)
+
+	row.nameLabel = nameLabel
+	row.minus = minus
+	row.plus = plus
 end
 
 local function updateSettingLabels()
+	local state = activeState()
+	local hideLegacySettings = state ~= nil and RacerConfig.isV5Plus(state.mode.Value)
 	for _, row in settingRows do
+		local visible = not hideLegacySettings
+		row.nameLabel.Visible = visible
+		row.valueLabel.Visible = visible
+		row.minus.Visible = visible
+		row.plus.Visible = visible
 		row.valueLabel.Text = currentSettingText(row)
+	end
+	local toggleStartY = if hideLegacySettings then 42 else 248
+	if textureToggleLabel then
+		textureToggleLabel.Position = UDim2.fromOffset(12, toggleStartY)
+	end
+	if spriteboxToggleLabel then
+		spriteboxToggleLabel.Position = UDim2.fromOffset(12, toggleStartY + 38)
+	end
+	if collisionboxToggleLabel then
+		collisionboxToggleLabel.Position = UDim2.fromOffset(12, toggleStartY + 76)
+	end
+	if resetButton then
+		resetButton.Visible = not hideLegacySettings
+		resetButton.Position = UDim2.fromOffset(12, 374)
 	end
 	if textureToggleLabel then
 		local available = textureAtlasImage() ~= nil
@@ -2585,7 +2616,6 @@ local function updateSettingLabels()
 			else Color3.fromRGB(150, 156, 164)
 	end
 	if spriteboxToggleLabel then
-		local state = activeState()
 		local available = state ~= nil and RacerConfig.isFinalLike(state.mode.Value)
 		spriteboxToggleLabel.Text =
 			`{if useSpriteboxDebug and available then "[x]" else "[ ]"} Spriteboxes`
@@ -2594,7 +2624,6 @@ local function updateSettingLabels()
 			else Color3.fromRGB(150, 156, 164)
 	end
 	if collisionboxToggleLabel then
-		local state = activeState()
 		local available = state ~= nil and RacerConfig.isFinalLike(state.mode.Value)
 		collisionboxToggleLabel.Text =
 			`{if useCollisionboxDebug and available then "[x]" else "[ ]"} Collisionboxes`
@@ -2662,8 +2691,7 @@ collisionboxToggleLabel.MouseButton1Click:Connect(function()
 	updateSettingLabels()
 end)
 
-local resetButton =
-	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 374), UDim2.new(1, -24, 0, 36))
+resetButton = makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 374), UDim2.new(1, -24, 0, 36))
 resetButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("ResetSettings")
 end)

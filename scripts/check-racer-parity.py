@@ -303,6 +303,7 @@ for token in [
     "RacerConfig.Modes.v6 = derive(RacerConfig.Modes.v5",
     'codeName = "racer-lab"',
     "labLeaderboards = true",
+    "function RacerConfig.isV5Plus(mode: string): boolean",
     'Name = "v5 Mobile Controls"',
     'Name = "v6 Lab"',
     "v5 = finalTrack",
@@ -1347,10 +1348,12 @@ for token in [
     "viewportTop + ACTIVE_STATUS_MARGIN_TOP",
     "screenGui.IgnoreGuiInset = active",
     "viewportTop + MOBILE_TOPBAR_CLEARANCE",
+    "local compactSettingsPanel = state ~= nil and RacerConfig.isV5Plus(state.mode.Value)",
     "local rightPanelButtonWidth =",
     "settingsButton.Position = UDim2.fromOffset(\n\t\t\t\trightPanelRight,\n\t\t\t\tviewportTop + MOBILE_HUD_MARGIN + 80",
     "settingsPanel.AnchorPoint = Vector2.new(0.5, 0.5)",
     "math.floor(absoluteSize.X / 2 + 0.5)",
+    "if compactSettingsPanel then 184 else 430",
     "settingsPanel.AnchorPoint = Vector2.new(1, 0)",
     "mobileStatusLeft = createMobileStatusLabel(\"MobileStatusLeft\", Enum.TextXAlignment.Left)",
     "mobileStatusRight = createMobileStatusLabel(\"MobileStatusRight\", Enum.TextXAlignment.Right)",
@@ -1371,6 +1374,10 @@ for token in [
     "if state.lastLapTime.Value > 0 then",
     "activeStatusLast.Visible = true",
     "render(fullRenderer, renderState)\n\t\tupdateActiveStatus(renderState)",
+    "local hideLegacySettings = state ~= nil and RacerConfig.isV5Plus(state.mode.Value)",
+    "row.nameLabel.Visible = visible",
+    "local toggleStartY = if hideLegacySettings then 42 else 248",
+    "resetButton.Visible = not hideLegacySettings",
 ]:
     if token not in CLIENT:
         fail(f"active player v4+ HUD must be a fullscreen overlay below the Roblox topbar: {token}")

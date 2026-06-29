@@ -81,6 +81,11 @@ function RacerConfig.isFinalLike(mode: string): boolean
 	return definition ~= nil and definition.traffic == true and definition.laps == true
 end
 
+function RacerConfig.isV5Plus(mode: string): boolean
+	local definition = RacerConfig.Modes[mode]
+	return definition ~= nil and definition.v5 == true
+end
+
 RacerConfig.Screens = {
 	{
 		Id = "straight",
