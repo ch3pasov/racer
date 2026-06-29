@@ -27,6 +27,7 @@ local CONTROL_ACTION = "RacerScreenControls"
 local OVERLAY_Z_INDEX = 10000
 local ACTIVE_STATUS_MARGIN_TOP = 14
 local MOBILE_HUD_MARGIN = 10
+local MOBILE_TOPBAR_CLEARANCE = 96
 local ROAD_Z_INDEX = 20
 local ROAD_DETAIL_Z_INDEX = ROAD_Z_INDEX + 1
 local ROAD_LANE_Z_INDEX = ROAD_Z_INDEX + 2
@@ -2208,7 +2209,8 @@ local function updateFullViewportSize()
 		local leftStatusWidth = math.max(96, math.min(260, leftPanelWidth - MOBILE_HUD_MARGIN * 2))
 		local rightStatusWidth = math.max(96, math.min(260, rightPanelWidth - MOBILE_HUD_MARGIN * 2))
 		local mobileStatusHeight = 68
-		mobileStatusLeft.Position = UDim2.fromOffset(MOBILE_HUD_MARGIN, viewportTop + MOBILE_HUD_MARGIN)
+		mobileStatusLeft.Position =
+			UDim2.fromOffset(MOBILE_HUD_MARGIN, viewportTop + MOBILE_TOPBAR_CLEARANCE)
 		mobileStatusLeft.Size = UDim2.fromOffset(leftStatusWidth, mobileStatusHeight)
 		mobileStatusRight.Position = UDim2.fromOffset(
 			absoluteSize.X - MOBILE_HUD_MARGIN - rightStatusWidth,
@@ -2219,14 +2221,22 @@ local function updateFullViewportSize()
 	if exitButton and rejoinButton and settingsButton and settingsPanel then
 		if mobileLayout then
 			local rightPanelRight = absoluteSize.X - MOBILE_HUD_MARGIN
+			local rightPanelButtonWidth =
+				math.max(72, math.min(150, rightPanelWidth - MOBILE_HUD_MARGIN * 2))
 			exitButton.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN)
-			exitButton.Size = UDim2.fromOffset(78, 34)
+			exitButton.Size = UDim2.fromOffset(rightPanelButtonWidth, 34)
 			exitButton.TextSize = 14
-			rejoinButton.Position = UDim2.fromOffset(rightPanelRight - 84, viewportTop + MOBILE_HUD_MARGIN)
-			rejoinButton.Size = UDim2.fromOffset(78, 34)
+			rejoinButton.Position = UDim2.fromOffset(
+				rightPanelRight,
+				viewportTop + MOBILE_HUD_MARGIN + 40
+			)
+			rejoinButton.Size = UDim2.fromOffset(rightPanelButtonWidth, 34)
 			rejoinButton.TextSize = 14
-			settingsButton.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 40)
-			settingsButton.Size = UDim2.fromOffset(162, 34)
+			settingsButton.Position = UDim2.fromOffset(
+				rightPanelRight,
+				viewportTop + MOBILE_HUD_MARGIN + 80
+			)
+			settingsButton.Size = UDim2.fromOffset(rightPanelButtonWidth, 34)
 			settingsButton.TextSize = 14
 			settingsPanel.AnchorPoint = Vector2.new(0.5, 0.5)
 			settingsPanel.Position = UDim2.fromOffset(
