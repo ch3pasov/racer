@@ -1076,9 +1076,9 @@ require(
     "debug traffic hitbox outlines must use the original NPC collision overlap window",
 )
 require(
-    r"local\s+collisionboxHeight\s*=\s*math\.min\(height,\s*COLLISION_DEBUG_STRIP_HEIGHT_PX\s*/\s*HEIGHT\).*?placeClippedObject\(\s*object,\s*spriteX,\s*spriteY,\s*width,\s*height,\s*projected\.clip,\s*width,\s*collisionboxHeight",
+    r"local\s+collisionboxHeight\s*=\s*math\.min\(height,\s*COLLISION_DEBUG_STRIP_HEIGHT_PX\s*/\s*HEIGHT\).*?local\s+playerDebugWidth\s*=\s*playerWidth\s*\*\s*RacerConfig\.Traffic\.CollisionOverlap.*?if\s+spriteData\.offset\s*>\s*0\s*then\s*collisionMinWorld\s*=\s*math\.max\(collisionMinWorld,\s*1\).*?else\s*collisionMaxWorld\s*=\s*math\.min\(collisionMaxWorld,\s*-1\).*?local\s+collisionboxMinWorld\s*=\s*collisionMinWorld\s*\+\s*playerDebugWidth\s*/\s*2.*?local\s+collisionboxMaxWorld\s*=\s*collisionMaxWorld\s*-\s*playerDebugWidth\s*/\s*2.*?placeClippedObject\(\s*object,\s*spriteX,\s*spriteY,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth,\s*collisionboxHeight,\s*collisionboxX",
     CLIENT,
-    "debug roadside collisionbox outlines must use the original full sprite width as a contact strip",
+    "debug roadside collisionboxes must overlap the current player collisionbox exactly when roadside collision can trigger",
 )
 require(
     r"function\s+RacerConfig\.trafficOffsetDelta\(.*?local\s+carWidth\s*=\s*item\.width.*?RacerMath\.overlap\(\s*playerX,\s*RacerConfig\.Traffic\.PlayerWidth,\s*item\.offset,\s*carWidth,\s*1\.2",
@@ -1300,6 +1300,7 @@ for token in [
     "playerCollisionbox.Visible = RacerConfig.isFinalLike(mode) and useCollisionboxDebug",
     "local boxVisibleLeftX = math.max(boxLeftX, visibleLeftX)",
     "local boxVisibleRightX = math.min(boxRightX, visibleRightX)",
+    "local centerX = boxCenterX or x",
     "boxVisibleWidth / visibleWidth",
     "boxVisibleHeight / visibleHeight",
     "local debugLineZIndex = zIndex + 1",
