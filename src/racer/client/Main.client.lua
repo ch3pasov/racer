@@ -2164,8 +2164,12 @@ local exitButton: TextButton? = nil
 local rejoinButton: TextButton? = nil
 local settingsButton: TextButton? = nil
 local settingsPanel: Frame? = nil
+local mobileLeftButton: TextButton? = nil
+local mobileRightButton: TextButton? = nil
+local mobileBrakeButton: TextButton? = nil
+local mobileGasButton: TextButton? = nil
 
-local function useMobileFullscreenLayout(): boolean
+local function useMobileSidePanelLayout(): boolean
 	return UserInputService.TouchEnabled
 end
 
@@ -2174,31 +2178,29 @@ local function updateFullViewportSize()
 	if absoluteSize.X <= 0 or absoluteSize.Y <= 0 then
 		return
 	end
-	local mobileLayout = useMobileFullscreenLayout()
-	local viewportTop = 0
-	if mobileLayout then
-		fullViewport.Size = UDim2.fromScale(1, 1)
-	else
-		local aspectRatio = RacerConfig.Width / RacerConfig.Height
-		local width = absoluteSize.X
-		local height = width / aspectRatio
-		if height > absoluteSize.Y then
-			height = absoluteSize.Y
-			width = height * aspectRatio
-		end
-		viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)
-		fullViewport.Size = UDim2.fromOffset(math.floor(width + 0.5), math.floor(height + 0.5))
+	local mobileLayout = useMobileSidePanelLayout()
+	local aspectRatio = RacerConfig.Width / RacerConfig.Height
+	local width = absoluteSize.X
+	local height = width / aspectRatio
+	if height > absoluteSize.Y then
+		height = absoluteSize.Y
+		width = height * aspectRatio
 	end
+	local viewportLeft = math.floor((absoluteSize.X - width) / 2 + 0.5)
+	local viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)
+	local viewportWidth = math.floor(width + 0.5)
+	local viewportHeight = math.floor(height + 0.5)
+	fullViewport.Size = UDim2.fromOffset(viewportWidth, viewportHeight)
 	if activeStatus then
 		local statusWidth = if mobileLayout
-			then math.max(120, absoluteSize.X - 192)
+			then math.max(260, viewportWidth - 24)
 			else 640
 		local statusHeight = if mobileLayout then 34 else 42
 		activeStatus.Size = UDim2.fromOffset(math.floor(statusWidth + 0.5), statusHeight)
 		activeStatus.Position = if mobileLayout
 			then UDim2.fromOffset(
-				MOBILE_HUD_MARGIN + math.floor(statusWidth / 2 + 0.5),
-				MOBILE_HUD_MARGIN
+				viewportLeft + math.floor(viewportWidth / 2 + 0.5),
+				viewportTop + MOBILE_HUD_MARGIN
 			)
 			else UDim2.fromOffset(
 				math.floor(absoluteSize.X / 2 + 0.5),
@@ -2207,16 +2209,17 @@ local function updateFullViewportSize()
 	end
 	if exitButton and rejoinButton and settingsButton and settingsPanel then
 		if mobileLayout then
-			exitButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN)
+			local rightPanelRight = absoluteSize.X - MOBILE_HUD_MARGIN
+			exitButton.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN)
 			exitButton.Size = UDim2.fromOffset(78, 34)
 			exitButton.TextSize = 14
-			rejoinButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN - 84, 0, MOBILE_HUD_MARGIN)
+			rejoinButton.Position = UDim2.fromOffset(rightPanelRight - 84, viewportTop + MOBILE_HUD_MARGIN)
 			rejoinButton.Size = UDim2.fromOffset(78, 34)
 			rejoinButton.TextSize = 14
-			settingsButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN + 40)
+			settingsButton.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 40)
 			settingsButton.Size = UDim2.fromOffset(162, 34)
 			settingsButton.TextSize = 14
-			settingsPanel.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN + 80)
+			settingsPanel.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 80)
 		else
 			exitButton.Position = UDim2.new(1, -18, 0, 18)
 			exitButton.Size = UDim2.fromOffset(104, 42)
@@ -2228,6 +2231,25 @@ local function updateFullViewportSize()
 			settingsButton.Size = UDim2.fromOffset(104, 42)
 			settingsButton.TextSize = 16
 			settingsPanel.Position = UDim2.new(1, -18, 0, 114)
+		end
+	end
+	if mobileLeftButton and mobileRightButton and mobileBrakeButton and mobileGasButton then
+		local leftPanelCenter = math.max(MOBILE_HUD_MARGIN + 76, viewportLeft / 2)
+		local rightPanelCenter = math.min(
+			absoluteSize.X - MOBILE_HUD_MARGIN - 76,
+			viewportLeft + viewportWidth + (absoluteSize.X - viewportLeft - viewportWidth) / 2
+		)
+		local bottomY = viewportTop + viewportHeight - MOBILE_HUD_MARGIN
+		if mobileLayout then
+			mobileLeftButton.Position = UDim2.fromOffset(leftPanelCenter - 76, bottomY)
+			mobileRightButton.Position = UDim2.fromOffset(leftPanelCenter, bottomY)
+			mobileBrakeButton.Position = UDim2.fromOffset(rightPanelCenter - 76, bottomY)
+			mobileGasButton.Position = UDim2.fromOffset(rightPanelCenter, bottomY)
+		else
+			mobileLeftButton.Position = UDim2.new(0, 16, 1, -24)
+			mobileRightButton.Position = UDim2.new(0, 90, 1, -24)
+			mobileBrakeButton.Position = UDim2.new(1, -156, 1, -24)
+			mobileGasButton.Position = UDim2.new(1, -82, 1, -24)
 		end
 	end
 end
@@ -2776,10 +2798,15 @@ local function createMobileControlButton(name: string, text: string, position: U
 	return button
 end
 
-createMobileControlButton("MobileLeftButton", "Left", UDim2.new(0, 16, 1, -24), "left")
-createMobileControlButton("MobileRightButton", "Right", UDim2.new(0, 90, 1, -24), "right")
-createMobileControlButton("MobileBrakeButton", "Brake", UDim2.new(1, -156, 1, -24), "slower")
-createMobileControlButton("MobileGasButton", "Gas", UDim2.new(1, -82, 1, -24), "faster")
+mobileLeftButton =
+	createMobileControlButton("MobileLeftButton", "Left", UDim2.new(0, 16, 1, -24), "left")
+mobileRightButton =
+	createMobileControlButton("MobileRightButton", "Right", UDim2.new(0, 90, 1, -24), "right")
+mobileBrakeButton =
+	createMobileControlButton("MobileBrakeButton", "Brake", UDim2.new(1, -156, 1, -24), "slower")
+mobileGasButton =
+	createMobileControlButton("MobileGasButton", "Gas", UDim2.new(1, -82, 1, -24), "faster")
+updateFullViewportSize()
 
 local function racerControlAction(_, inputState: Enum.UserInputState, inputObject: InputObject)
 	if inputObject.KeyCode == Enum.KeyCode.Tab then
@@ -2861,7 +2888,9 @@ end)
 local function updateHud()
 	local state = activeState()
 	local active = state ~= nil
+	screenGui.IgnoreGuiInset = active
 	fullScreen.Visible = active
+	updateFullViewportSize()
 	labRejoinButton.Visible = not active
 	title.Visible = false
 	hint.Visible = not active

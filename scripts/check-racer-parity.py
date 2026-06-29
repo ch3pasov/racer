@@ -515,17 +515,16 @@ for client_name in render_signature_fields:
 
 for token in [
     'fullViewport.Name = "RacerViewport"',
-    "local function useMobileFullscreenLayout(): boolean",
+    "local function useMobileSidePanelLayout(): boolean",
     "return UserInputService.TouchEnabled",
-    "if mobileLayout then",
-    "fullViewport.Size = UDim2.fromScale(1, 1)",
     "local aspectRatio = RacerConfig.Width / RacerConfig.Height",
     "height = width / aspectRatio",
     "width = height * aspectRatio",
+    "fullViewport.Size = UDim2.fromOffset(viewportWidth, viewportHeight)",
     'local fullRenderer = createRenderer(fullViewport, "LocalScreen")',
 ]:
     if token not in CLIENT:
-        fail(f"fullscreen renderer must keep desktop 4:3 while mobile uses the full screen: {token}")
+        fail(f"fullscreen renderer must keep the original 4:3 canvas while mobile uses side panels: {token}")
 
 expected_track_lengths = {
     "straight": 500,
@@ -1336,7 +1335,10 @@ for token in [
     "local lastLap = if state.lastLapTime.Value > 0",
     "viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)",
     "viewportTop + ACTIVE_STATUS_MARGIN_TOP",
-    "settingsButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN + 40)",
+    "screenGui.IgnoreGuiInset = active",
+    "settingsButton.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 40)",
+    "mobileLeftButton.Position = UDim2.fromOffset(leftPanelCenter - 76, bottomY)",
+    "mobileGasButton.Position = UDim2.fromOffset(rightPanelCenter, bottomY)",
     "fullRenderer.statusEnabled = false",
     "activeStatus = Instance.new(\"Frame\")",
     "local activeStatusSpeed = createActiveStatusField(",
