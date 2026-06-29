@@ -26,6 +26,7 @@ local ROAD_SCANLINE_HEIGHT = 2
 local CONTROL_ACTION = "RacerScreenControls"
 local OVERLAY_Z_INDEX = 10000
 local ACTIVE_STATUS_MARGIN_TOP = 14
+local MOBILE_HUD_MARGIN = 10
 local ROAD_Z_INDEX = 20
 local ROAD_DETAIL_Z_INDEX = ROAD_Z_INDEX + 1
 local ROAD_LANE_Z_INDEX = ROAD_Z_INDEX + 2
@@ -2159,26 +2160,75 @@ fullViewport.ZIndex = 201
 fullViewport.Parent = fullScreen
 
 local activeStatus = nil
+local exitButton: TextButton? = nil
+local rejoinButton: TextButton? = nil
+local settingsButton: TextButton? = nil
+local settingsPanel: Frame? = nil
+
+local function useMobileFullscreenLayout(): boolean
+	return UserInputService.TouchEnabled
+end
 
 local function updateFullViewportSize()
 	local absoluteSize = fullScreen.AbsoluteSize
 	if absoluteSize.X <= 0 or absoluteSize.Y <= 0 then
 		return
 	end
-	local aspectRatio = RacerConfig.Width / RacerConfig.Height
-	local width = absoluteSize.X
-	local height = width / aspectRatio
-	if height > absoluteSize.Y then
-		height = absoluteSize.Y
-		width = height * aspectRatio
+	local mobileLayout = useMobileFullscreenLayout()
+	local viewportTop = 0
+	if mobileLayout then
+		fullViewport.Size = UDim2.fromScale(1, 1)
+	else
+		local aspectRatio = RacerConfig.Width / RacerConfig.Height
+		local width = absoluteSize.X
+		local height = width / aspectRatio
+		if height > absoluteSize.Y then
+			height = absoluteSize.Y
+			width = height * aspectRatio
+		end
+		viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)
+		fullViewport.Size = UDim2.fromOffset(math.floor(width + 0.5), math.floor(height + 0.5))
 	end
-	local viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)
-	fullViewport.Size = UDim2.fromOffset(math.floor(width + 0.5), math.floor(height + 0.5))
 	if activeStatus then
-		activeStatus.Position = UDim2.fromOffset(
-			math.floor(absoluteSize.X / 2 + 0.5),
-			viewportTop + ACTIVE_STATUS_MARGIN_TOP
-		)
+		local statusWidth = if mobileLayout
+			then math.max(120, absoluteSize.X - 192)
+			else 640
+		local statusHeight = if mobileLayout then 34 else 42
+		activeStatus.Size = UDim2.fromOffset(math.floor(statusWidth + 0.5), statusHeight)
+		activeStatus.Position = if mobileLayout
+			then UDim2.fromOffset(
+				MOBILE_HUD_MARGIN + math.floor(statusWidth / 2 + 0.5),
+				MOBILE_HUD_MARGIN
+			)
+			else UDim2.fromOffset(
+				math.floor(absoluteSize.X / 2 + 0.5),
+				viewportTop + ACTIVE_STATUS_MARGIN_TOP
+			)
+	end
+	if exitButton and rejoinButton and settingsButton and settingsPanel then
+		if mobileLayout then
+			exitButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN)
+			exitButton.Size = UDim2.fromOffset(78, 34)
+			exitButton.TextSize = 14
+			rejoinButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN - 84, 0, MOBILE_HUD_MARGIN)
+			rejoinButton.Size = UDim2.fromOffset(78, 34)
+			rejoinButton.TextSize = 14
+			settingsButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN + 40)
+			settingsButton.Size = UDim2.fromOffset(162, 34)
+			settingsButton.TextSize = 14
+			settingsPanel.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN + 80)
+		else
+			exitButton.Position = UDim2.new(1, -18, 0, 18)
+			exitButton.Size = UDim2.fromOffset(104, 42)
+			exitButton.TextSize = 16
+			rejoinButton.Position = UDim2.new(1, -130, 0, 18)
+			rejoinButton.Size = UDim2.fromOffset(104, 42)
+			rejoinButton.TextSize = 16
+			settingsButton.Position = UDim2.new(1, -18, 0, 66)
+			settingsButton.Size = UDim2.fromOffset(104, 42)
+			settingsButton.TextSize = 16
+			settingsPanel.Position = UDim2.new(1, -18, 0, 114)
+		end
 	end
 end
 
@@ -2269,7 +2319,7 @@ local function updateActiveStatus(state)
 	end
 end
 
-local exitButton = Instance.new("TextButton")
+exitButton = Instance.new("TextButton")
 exitButton.Name = "ExitButton"
 exitButton.AnchorPoint = Vector2.new(1, 0)
 exitButton.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
@@ -2287,7 +2337,7 @@ exitButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("Exit")
 end)
 
-local rejoinButton = Instance.new("TextButton")
+rejoinButton = Instance.new("TextButton")
 rejoinButton.Name = "RejoinButton"
 rejoinButton.AnchorPoint = Vector2.new(1, 0)
 rejoinButton.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
@@ -2305,7 +2355,7 @@ rejoinButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("Rejoin")
 end)
 
-local settingsButton = Instance.new("TextButton")
+settingsButton = Instance.new("TextButton")
 settingsButton.Name = "SettingsButton"
 settingsButton.AnchorPoint = Vector2.new(1, 0)
 settingsButton.BackgroundColor3 = Color3.fromRGB(18, 22, 30)
@@ -2320,7 +2370,7 @@ settingsButton.TextSize = 16
 settingsButton.ZIndex = 260
 settingsButton.Parent = fullScreen
 
-local settingsPanel = Instance.new("Frame")
+settingsPanel = Instance.new("Frame")
 settingsPanel.Name = "SettingsPanel"
 settingsPanel.AnchorPoint = Vector2.new(1, 0)
 settingsPanel.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
@@ -2518,6 +2568,7 @@ local resetButton =
 resetButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("ResetSettings")
 end)
+updateFullViewportSize()
 updateSettingLabels()
 
 task.spawn(function()

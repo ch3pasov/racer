@@ -515,13 +515,17 @@ for client_name in render_signature_fields:
 
 for token in [
     'fullViewport.Name = "RacerViewport"',
+    "local function useMobileFullscreenLayout(): boolean",
+    "return UserInputService.TouchEnabled",
+    "if mobileLayout then",
+    "fullViewport.Size = UDim2.fromScale(1, 1)",
     "local aspectRatio = RacerConfig.Width / RacerConfig.Height",
     "height = width / aspectRatio",
     "width = height * aspectRatio",
     'local fullRenderer = createRenderer(fullViewport, "LocalScreen")',
 ]:
     if token not in CLIENT:
-        fail(f"fullscreen renderer must preserve the original 4:3 canvas aspect ratio: {token}")
+        fail(f"fullscreen renderer must keep desktop 4:3 while mobile uses the full screen: {token}")
 
 expected_track_lengths = {
     "straight": 500,
@@ -1328,9 +1332,11 @@ if "local FINAL_OBJECT_COUNT = RacerConfig.FinalObjectCount" not in CLIENT:
 
 for token in [
     "local ACTIVE_STATUS_MARGIN_TOP = 14",
+    "local MOBILE_HUD_MARGIN = 10",
     "local lastLap = if state.lastLapTime.Value > 0",
-    "local viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)",
+    "viewportTop = math.floor((absoluteSize.Y - height) / 2 + 0.5)",
     "viewportTop + ACTIVE_STATUS_MARGIN_TOP",
+    "settingsButton.Position = UDim2.new(1, -MOBILE_HUD_MARGIN, 0, MOBILE_HUD_MARGIN + 40)",
     "fullRenderer.statusEnabled = false",
     "activeStatus = Instance.new(\"Frame\")",
     "local activeStatusSpeed = createActiveStatusField(",
