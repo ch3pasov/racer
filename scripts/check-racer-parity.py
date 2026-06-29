@@ -1071,14 +1071,19 @@ require(
     "roadside rendering and collision must share the same sprite center formula",
 )
 require(
-    r'local\s+collisionboxWidth\s*=\s*width\s*\*\s*RacerConfig\.Traffic\.CollisionOverlap.*?placeClippedObject\(\s*object,\s*x,\s*y,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth',
+    r'local\s+collisionOverlap\s*=\s*RacerConfig\.Traffic\.CollisionOverlap.*?local\s+playerDebugWidthScale\s*=\s*RacerConfig\.Traffic\.PlayerWidth\s*\*\s*scale\s*\*\s*roadWidthSetting\s*/\s*2.*?local\s+collisionboxWidth\s*=\s*math\.max\(\s*0,\s*width\s*\*\s*collisionOverlap\s*-\s*playerDebugWidthScale\s*\*\s*\(1\s*-\s*collisionOverlap\)\s*\).*?placeClippedObject\(\s*object,\s*x,\s*y,\s*width,\s*height,\s*projected\.clip,\s*collisionboxWidth',
     CLIENT,
-    "debug traffic hitbox outlines must use the original NPC collision overlap window",
+    "debug traffic hitbox outlines must compensate for the full-width player collision outline",
 )
 require(
-    r"for\s+index\s*=\s*#objectSegments,\s*1,\s*-1\s+do.*?for\s+_,\s*spriteData\s+in\s+RacerConfig\.spritesForSegment\(mode,\s*projected\.index\)\s+do.*?local\s+playerDebugWidth\s*=\s*playerWidth\s*\*\s*RacerConfig\.Traffic\.CollisionOverlap.*?if\s+spriteData\.offset\s*>\s*0\s*then\s*collisionMinWorld\s*=\s*math\.max\(collisionMinWorld,\s*1\).*?else\s*collisionMaxWorld\s*=\s*math\.min\(collisionMaxWorld,\s*-1\).*?local\s+collisionboxMinWorld\s*=\s*collisionMinWorld\s*\+\s*playerDebugWidth\s*/\s*2.*?local\s+collisionboxMaxWorld\s*=\s*collisionMaxWorld\s*-\s*playerDebugWidth\s*/\s*2.*?placeScreenDebugBox\(\s*renderer\.roadsideCollisionboxes\[nextCursor\],\s*collisionboxX,\s*collisionBottomY,\s*collisionboxWidth,\s*collisionboxHeight",
+    r"for\s+index\s*=\s*#objectSegments,\s*1,\s*-1\s+do.*?for\s+_,\s*spriteData\s+in\s+RacerConfig\.spritesForSegment\(mode,\s*projected\.index\)\s+do.*?local\s+playerDebugWidth\s*=\s*playerWidth.*?if\s+spriteData\.offset\s*>\s*0\s*then\s*collisionMinWorld\s*=\s*math\.max\(collisionMinWorld,\s*1\).*?else\s*collisionMaxWorld\s*=\s*math\.min\(collisionMaxWorld,\s*-1\).*?local\s+collisionboxMinWorld\s*=\s*collisionMinWorld\s*\+\s*playerDebugWidth\s*/\s*2.*?local\s+collisionboxMaxWorld\s*=\s*collisionMaxWorld\s*-\s*playerDebugWidth\s*/\s*2.*?placeScreenDebugBox\(\s*renderer\.roadsideCollisionboxes\[nextCursor\],\s*collisionboxX,\s*collisionBottomY,\s*collisionboxWidth,\s*collisionboxHeight",
     CLIENT,
     "debug roadside collisionboxes must be previewed for all visible obstacle segments and overlap the player collisionbox exactly when collision can trigger",
+)
+require(
+    r"playerCollisionbox\.Position\s*=\s*UDim2\.fromScale\(0,\s*0\).*?playerCollisionbox\.Size\s*=\s*UDim2\.fromScale\(1,\s*1\)",
+    CLIENT,
+    "debug player collision outline must match the full player spritebox",
 )
 require(
     r"function\s+RacerConfig\.trafficOffsetDelta\(.*?local\s+carWidth\s*=\s*item\.width.*?RacerMath\.overlap\(\s*playerX,\s*RacerConfig\.Traffic\.PlayerWidth,\s*item\.offset,\s*carWidth,\s*1\.2",
