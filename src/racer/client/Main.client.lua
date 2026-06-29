@@ -2736,6 +2736,8 @@ local controlsBound = false
 local savedCameraType: Enum.CameraType? = nil
 local savedPlayerListEnabled = true
 local savedChatEnabled = true
+local playerModuleControls = nil
+local playerModuleControlsDisabled = false
 
 local function getCoreGuiEnabled(coreGuiType: Enum.CoreGuiType, fallback: boolean): boolean
 	local ok, enabled = pcall(function()
@@ -2748,6 +2750,59 @@ local function setCoreGuiEnabled(coreGuiType: Enum.CoreGuiType, enabled: boolean
 	pcall(function()
 		StarterGui:SetCoreGuiEnabled(coreGuiType, enabled)
 	end)
+end
+
+local function getPlayerModuleControls()
+	if playerModuleControls then
+		return playerModuleControls
+	end
+	local playerScripts = player:FindFirstChild("PlayerScripts")
+		or player:WaitForChild("PlayerScripts", 2)
+	if not playerScripts then
+		return nil
+	end
+	local playerModule = playerScripts:FindFirstChild("PlayerModule")
+		or playerScripts:WaitForChild("PlayerModule", 2)
+	if not playerModule then
+		return nil
+	end
+	local ok, playerModuleApi = pcall(require, playerModule)
+	if not ok or typeof(playerModuleApi) ~= "table" or typeof(playerModuleApi.GetControls) ~= "function" then
+		return nil
+	end
+	local controlsOk, controls = pcall(function()
+		return playerModuleApi:GetControls()
+	end)
+	if not controlsOk then
+		return nil
+	end
+	playerModuleControls = controls
+	return controls
+end
+
+local function setCharacterControlsEnabled(enabled: boolean)
+	local controls = getPlayerModuleControls()
+	if not controls then
+		return
+	end
+	if enabled then
+		if not playerModuleControlsDisabled then
+			return
+		end
+		local ok = pcall(function()
+			controls:Enable()
+		end)
+		if ok then
+			playerModuleControlsDisabled = false
+		end
+	else
+		local ok = pcall(function()
+			controls:Disable()
+		end)
+		if ok then
+			playerModuleControlsDisabled = true
+		end
+	end
 end
 
 local function releaseFocusedTextBox()
@@ -2943,6 +2998,7 @@ local function bindRacerControls()
 	savedChatEnabled = getCoreGuiEnabled(Enum.CoreGuiType.Chat, true)
 	setCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 	setCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+	setCharacterControlsEnabled(false)
 	releaseFocusedTextBox()
 	ContextActionService:BindActionAtPriority(
 		CONTROL_ACTION,
@@ -2976,6 +3032,7 @@ local function unbindRacerControls()
 	end
 	setCoreGuiEnabled(Enum.CoreGuiType.PlayerList, savedPlayerListEnabled)
 	setCoreGuiEnabled(Enum.CoreGuiType.Chat, savedChatEnabled)
+	setCharacterControlsEnabled(true)
 	savedCameraType = nil
 end
 

@@ -1417,6 +1417,14 @@ for token in [
     "savedChatEnabled = getCoreGuiEnabled(Enum.CoreGuiType.Chat, true)",
     "setCoreGuiEnabled(Enum.CoreGuiType.Chat, false)",
     "setCoreGuiEnabled(Enum.CoreGuiType.Chat, savedChatEnabled)",
+    "local function getPlayerModuleControls()",
+    "playerScripts:WaitForChild(\"PlayerModule\", 2)",
+    "playerModuleApi:GetControls()",
+    "local function setCharacterControlsEnabled(enabled: boolean)",
+    "controls:Disable()",
+    "controls:Enable()",
+    "setCharacterControlsEnabled(false)",
+    "setCharacterControlsEnabled(true)",
     "syncHeldKeyboardInputs()",
 ]:
     if token not in CLIENT:
