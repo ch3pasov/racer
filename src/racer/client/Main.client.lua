@@ -2165,8 +2165,8 @@ local exitButton: TextButton? = nil
 local rejoinButton: TextButton? = nil
 local settingsButton: TextButton? = nil
 local settingsPanel: Frame? = nil
-local mobileLeftButton: TextButton? = nil
-local mobileRightButton: TextButton? = nil
+local mobileSteeringFrame: Frame? = nil
+local mobileSteeringThumb: Frame? = nil
 local mobileBrakeButton: TextButton? = nil
 local mobileGasButton: TextButton? = nil
 local mobileStatusLeft: TextLabel? = nil
@@ -2269,7 +2269,7 @@ local function updateFullViewportSize()
 			settingsPanel.Size = UDim2.fromOffset(238, if compactSettingsPanel then 184 else 430)
 		end
 	end
-	if mobileLeftButton and mobileRightButton and mobileBrakeButton and mobileGasButton then
+	if mobileSteeringFrame and mobileBrakeButton and mobileGasButton then
 		local leftPanelCenter = math.max(MOBILE_HUD_MARGIN + 76, leftPanelWidth / 2)
 		local rightPanelCenter = math.min(
 			absoluteSize.X - MOBILE_HUD_MARGIN - 76,
@@ -2277,13 +2277,14 @@ local function updateFullViewportSize()
 		)
 		local bottomY = viewportTop + viewportHeight - MOBILE_HUD_MARGIN
 		if mobileLayout then
-			mobileLeftButton.Position = UDim2.fromOffset(leftPanelCenter - 76, bottomY)
-			mobileRightButton.Position = UDim2.fromOffset(leftPanelCenter, bottomY)
+			local steeringWidth = math.max(118, math.min(172, leftPanelWidth - MOBILE_HUD_MARGIN * 2))
+			mobileSteeringFrame.Position = UDim2.fromOffset(leftPanelCenter, bottomY)
+			mobileSteeringFrame.Size = UDim2.fromOffset(steeringWidth, 56)
 			mobileBrakeButton.Position = UDim2.fromOffset(rightPanelCenter - 76, bottomY)
 			mobileGasButton.Position = UDim2.fromOffset(rightPanelCenter, bottomY)
 		else
-			mobileLeftButton.Position = UDim2.new(0, 16, 1, -24)
-			mobileRightButton.Position = UDim2.new(0, 90, 1, -24)
+			mobileSteeringFrame.Position = UDim2.new(0, 82, 1, -24)
+			mobileSteeringFrame.Size = UDim2.fromOffset(132, 56)
 			mobileBrakeButton.Position = UDim2.new(1, -156, 1, -24)
 			mobileGasButton.Position = UDim2.new(1, -82, 1, -24)
 		end
@@ -2836,6 +2837,10 @@ end
 local mobileControlButtons = {}
 local mobileButtonColor = Color3.fromRGB(18, 22, 30)
 local mobileButtonPressedColor = Color3.fromRGB(54, 68, 84)
+local MOBILE_STEER_DEAD_ZONE = 0.28
+local mobileSteeringValue = 0
+local activeSteeringPointer: InputObject? = nil
+local activeSteeringUsesMouse = false
 
 local mobileControls = Instance.new("Frame")
 mobileControls.Name = "MobileControls"
@@ -2850,6 +2855,35 @@ local function resetMobileControlButtons()
 	for _, button in mobileControlButtons do
 		button.BackgroundColor3 = mobileButtonColor
 	end
+end
+
+local function setMobileSteeringValue(value: number)
+	mobileSteeringValue = math.clamp(value, -1, 1)
+	if mobileSteeringThumb then
+		mobileSteeringThumb.Position = UDim2.fromScale(0.5 + mobileSteeringValue * 0.35, 0.5)
+	end
+	setPointerInput("left", mobileSteeringValue < -MOBILE_STEER_DEAD_ZONE)
+	setPointerInput("right", mobileSteeringValue > MOBILE_STEER_DEAD_ZONE)
+end
+
+local function resetMobileSteering()
+	activeSteeringPointer = nil
+	activeSteeringUsesMouse = false
+	setMobileSteeringValue(0)
+end
+
+local function updateMobileSteeringFromScreenX(screenX: number)
+	if not mobileSteeringFrame then
+		return
+	end
+	local absolutePosition = mobileSteeringFrame.AbsolutePosition
+	local absoluteSize = mobileSteeringFrame.AbsoluteSize
+	if absoluteSize.X <= 0 then
+		return
+	end
+	local centerX = absolutePosition.X + absoluteSize.X / 2
+	local steeringRadius = math.max(1, absoluteSize.X / 2)
+	setMobileSteeringValue((screenX - centerX) / steeringRadius)
 end
 
 local function bindMobileHoldButton(button: TextButton, inputName: string)
@@ -2903,14 +2937,107 @@ local function createMobileControlButton(name: string, text: string, position: U
 	return button
 end
 
-mobileLeftButton =
-	createMobileControlButton("MobileLeftButton", "Left", UDim2.new(0, 16, 1, -24), "left")
-mobileRightButton =
-	createMobileControlButton("MobileRightButton", "Right", UDim2.new(0, 90, 1, -24), "right")
+local function createMobileSteeringSlider()
+	local frame = Instance.new("Frame")
+	frame.Name = "MobileSteeringSlider"
+	frame.AnchorPoint = Vector2.new(0.5, 1)
+	frame.BackgroundColor3 = mobileButtonColor
+	frame.BackgroundTransparency = 0.12
+	frame.BorderSizePixel = 0
+	frame.Position = UDim2.new(0, 82, 1, -24)
+	frame.Size = UDim2.fromOffset(132, 56)
+	frame.ZIndex = 271
+	frame.Parent = mobileControls
+	rounded(frame, 8)
+
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.AnchorPoint = Vector2.new(0.5, 0.5)
+	track.BackgroundColor3 = Color3.fromRGB(89, 104, 122)
+	track.BackgroundTransparency = 0.15
+	track.BorderSizePixel = 0
+	track.Position = UDim2.fromScale(0.5, 0.55)
+	track.Size = UDim2.new(1, -30, 0, 5)
+	track.ZIndex = 272
+	track.Parent = frame
+	rounded(track, 3)
+
+	local centerMark = Instance.new("Frame")
+	centerMark.Name = "CenterMark"
+	centerMark.AnchorPoint = Vector2.new(0.5, 0.5)
+	centerMark.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	centerMark.BackgroundTransparency = 0.25
+	centerMark.BorderSizePixel = 0
+	centerMark.Position = UDim2.fromScale(0.5, 0.55)
+	centerMark.Size = UDim2.fromOffset(3, 22)
+	centerMark.ZIndex = 273
+	centerMark.Parent = frame
+	rounded(centerMark, 2)
+
+	local thumb = Instance.new("Frame")
+	thumb.Name = "Thumb"
+	thumb.AnchorPoint = Vector2.new(0.5, 0.5)
+	thumb.BackgroundColor3 = Color3.fromRGB(236, 243, 255)
+	thumb.BackgroundTransparency = 0.04
+	thumb.BorderSizePixel = 0
+	thumb.Position = UDim2.fromScale(0.5, 0.5)
+	thumb.Size = UDim2.fromOffset(34, 40)
+	thumb.ZIndex = 274
+	thumb.Parent = frame
+	rounded(thumb, 10)
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBold
+	label.Position = UDim2.fromOffset(0, 4)
+	label.Size = UDim2.new(1, 0, 0, 14)
+	label.Text = "Steer"
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.TextSize = 11
+	label.TextTransparency = 0.15
+	label.ZIndex = 275
+	label.Parent = frame
+
+	local function beginSteering(inputObject)
+		if
+			inputObject.UserInputType ~= Enum.UserInputType.Touch
+			and inputObject.UserInputType ~= Enum.UserInputType.MouseButton1
+		then
+			return
+		end
+		activeSteeringPointer = inputObject
+		activeSteeringUsesMouse = inputObject.UserInputType == Enum.UserInputType.MouseButton1
+		updateMobileSteeringFromScreenX(inputObject.Position.X)
+	end
+	for _, control in { frame, track, centerMark, thumb, label } do
+		control.InputBegan:Connect(beginSteering)
+	end
+
+	return frame, thumb
+end
+
+mobileSteeringFrame, mobileSteeringThumb = createMobileSteeringSlider()
 mobileBrakeButton =
 	createMobileControlButton("MobileBrakeButton", "Brake", UDim2.new(1, -156, 1, -24), "slower")
 mobileGasButton =
 	createMobileControlButton("MobileGasButton", "Gas", UDim2.new(1, -82, 1, -24), "faster")
+
+UserInputService.InputChanged:Connect(function(inputObject)
+	if inputObject == activeSteeringPointer then
+		updateMobileSteeringFromScreenX(inputObject.Position.X)
+	elseif activeSteeringUsesMouse and inputObject.UserInputType == Enum.UserInputType.MouseMovement then
+		updateMobileSteeringFromScreenX(inputObject.Position.X)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(inputObject)
+	if inputObject == activeSteeringPointer then
+		resetMobileSteering()
+	elseif activeSteeringUsesMouse and inputObject.UserInputType == Enum.UserInputType.MouseButton1 then
+		resetMobileSteering()
+	end
+end)
 updateFullViewportSize()
 
 local function racerControlAction(_, inputState: Enum.UserInputState, inputObject: InputObject)
@@ -2970,6 +3097,7 @@ local function unbindRacerControls()
 	ContextActionService:UnbindAction(CONTROL_ACTION)
 	releaseInputs()
 	resetMobileControlButtons()
+	resetMobileSteering()
 	local camera = Workspace.CurrentCamera
 	if camera then
 		camera.CameraType = savedCameraType or Enum.CameraType.Custom
