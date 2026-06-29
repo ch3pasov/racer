@@ -2,116 +2,84 @@
 
 ## Goals
 
-1. Reach 1:1 gameplay-logic parity with https://jakesgordon.com/games/racer/
-   across all four versions.
-2. Fix spectator display desync. Player rendering currently stays correct, but
-   spectator rendering starts drifting after some time and the mismatch grows.
+1. Keep versions `v1` through `v4` at 1:1 gameplay-logic parity with
+   https://jakesgordon.com/games/racer/.
+2. Build new features as an explicit inheritance chain:
+   `v5 Mobile Controls` -> `v6 Driver Occupants` -> `v7 Record Boards`.
+3. Fix shared renderer issues, including spectator desync and texture/hitbox
+   alignment, in common code so every relevant version benefits at once.
 
-## Texture Work Constraints
+## Version Roadmap
 
-- Keep the existing placeholder visuals intact.
-- Add new texture art as an optional renderer mode controlled by a settings
-  checkbox.
-- The user must be able to turn the new textures off and return to the current
-  placeholder visuals at any time.
-- Texture sprites must visually match their gameplay/render hitboxes. The
-  visible bottom of every sprite should align with the sprite rectangle bottom,
-  especially for cars and roadside objects, so nothing appears to float above
-  the projected ground contact point.
+- `v1 Straight`, `v2 Curves`, `v3 Hills`, and `v4 Final` are protected original
+  versions. Do not add new feature behavior there unless matching the original.
+- `v5 Mobile Controls` inherits `v4 Final` and adds only mobile-player UI and
+  input improvements.
+- `v6 Driver Occupants` inherits `v5` and adds improved driver/passenger
+  presentation inside the player car.
+- `v7 Record Boards` inherits `v6` and adds persistent personal, friends, and
+  global lap records plus live billboard/board presentation.
+- Spectator fixes and texture/rendering fixes are shared fixes, not new
+  version-only features. Apply them at the lowest common implementation point
+  that preserves `v1-v4` original behavior.
 
-## Feature Roadmap
+## Done
 
-Each feature should be a separate commit. It is fine to push a batch of commits
-to GitHub later, but the local history should stay split by feature so each
-change can be reviewed or reverted independently.
+- `v5 Mobile Controls` exists as the current fifth stand and inherits `v4 Final`
+  without changing `v1-v4`.
+- Active-player HUD fixes for `v4+` are in place, including persistent
+  `Last Lap`, fullscreen active-player HUD, and mobile side-panel layout.
+- Mobile racer controls use on-screen buttons and temporarily disable Roblox
+  character controls while the player is inside a racer screen.
+- Optional debug overlays exist for `Spriteboxes` and `Collisionboxes`.
+- Texture checks verify that every gameplay sprite has a texture rect, stays
+  inside the atlas, and touches the bottom edge.
 
-### Done
+## Not Done Yet
 
-- `v5 Lab` exists as a fifth stand and inherits `v4 Final` physics, traffic,
-  laps, HUD, and collision behavior without changing v1-v4.
-  Commit: `fb1895a Add v5 racer stand`.
-- The player car has visible driver/passenger shapes in the texture atlas.
-  Commit: `29c4b70 Add people to racer player car`.
-- `v5` can overlay Roblox avatar thumbnails for the driver and a passenger
-  when available, with the atlas people remaining as fallback.
-  Commit: `29c4b70 Add people to racer player car`.
-- `v5` has three physical leaderboard panels for personal, friends, and global
-  top-10 lap records backed by DataStore.
-  Commit: `bf70c12 Add v5 lap leaderboards`.
-- Some `v5` billboards can show live leaderboard content, currently global
-  top-1 text.
-  Commit: `698e328 Add live v5 billboard content`.
-- `v5` has decorative visual-only intersections and T-junctions, with traffic
-  filtered out of the junction buffer.
-  Commit: `9b1e40d Add v5 visual intersections`.
-- The `v5` area is moved away from spawn and the lab floor/walls are expanded.
-  Commit: `44ba29e Improve v5 spacing and sprite textures`.
-- Texture checks now verify that every gameplay sprite has a texture rect and
-  that every rect stays inside the atlas and touches the bottom edge.
-  Commit: `44ba29e Improve v5 spacing and sprite textures`.
-- In v4+ active-player HUD, `Last Lap` persists after lap completion instead
-  of disappearing when the next client frame receives a stale zero server
-  snapshot.
+- `v6 Driver Occupants` is not yet a clean standalone version. Existing avatar
+  occupant work must be moved behind the `v6` feature boundary.
+- `v7 Record Boards` is not yet a clean standalone version. Existing record
+  board/DataStore/live billboard work must be moved behind the `v7` boundary.
+- Production-quality textures are not done. Current texture art is still a
+  deterministic atlas, not final generated or hand-finished art.
+- Spectator display desync is still open; active-player rendering is the
+  priority, but spectator correctness must be fixed as a shared renderer task.
 
-### Not Done Yet
+## Overnight Plan
 
-- Production-quality textures are not done. Current textures are a deterministic
-  atlas with improved details, not final generated/hand-finished art.
-- The avatar driver is a 2D Roblox thumbnail overlay, not a true rear-view
-  extraction from the player's character.
-- The passenger selection is simple: another server player if one is available,
-  otherwise the drawn fallback remains visible.
-- Friend/global leaderboards need in-game validation in a published server with
-  DataStore and friend APIs enabled.
-- Spectator display desync is still a separate future task after player-facing
-  game behavior is stable.
+Each step should be its own commit and, when it affects the Roblox place, should
+be published from a clean committed tree.
 
-### Next Feature Commits
+1. `docs: update racer version roadmap`
+   - Replace the old `v5 Lab` roadmap with the explicit `v5/v6/v7` chain above.
 
-1. `art: add production racer texture source pack`
-   - Generate or draw proper source sprites for player car, traffic, roadside
-     objects, billboards, and intersection decoration.
-   - Keep transparent source assets separate from the packed Roblox atlas.
-   - Acceptance: source images exist, are visually inspectable, and are not
-     merely procedural placeholders.
+2. `version: split driver and records into v6 v7`
+   - Add `v6 Driver Occupants` as `v5 + driver/passenger feature flags`.
+   - Add `v7 Record Boards` as `v6 + records/live billboard feature flags`.
+   - Activate `v6` and `v7` stands in the lab.
+   - Move record DataStores, board names, and live billboard replication from
+     `RacerV6...` to `RacerV7...`.
+   - Update parity checks so the version inheritance cannot silently regress.
 
-2. `art: pack production texture atlas`
-   - Pack the source sprites into `assets/racer/textures`.
-   - Update `RacerTextures.lua` rects and uploaded Roblox image asset.
-   - Keep the placeholder toggle intact.
-   - Acceptance: all sprite rects pass parity-check, bottom alignment passes,
-     and old placeholders still work when textures are disabled.
+3. `v6: improve avatar car occupants`
+   - Improve driver/passenger presentation only after the `v6` boundary is
+     clean.
+   - Keep deterministic fallback people visible when avatar imagery fails.
 
-3. `v5: improve avatar car occupants`
-   - Replace thumbnail overlay with a better rear-view/avatar-derived occupant
-     pipeline if Roblox APIs allow it.
-   - Keep fallback people visible when avatar images fail.
-   - Acceptance: driver/passenger stay inside the car cabin across straight,
-     turning, uphill, and downhill frames.
+4. `v7: validate persistent record boards`
+   - Test personal, friends, and global record boards in a published server.
+   - Confirm best-lap writes only after valid `v7` laps.
+   - Confirm failures in DataStore or friends APIs do not break racing.
 
-4. `v5: validate persistent leaderboards`
-   - Test personal, friends, and global lists in a published server.
-   - Confirm best-lap writes only after valid v5 laps.
-   - Acceptance: top-10 lists update without breaking the race if DataStore or
-     friends data is unavailable.
+5. Shared fixes after the version split
+   - `fix: repair spectator renderer desync`
+   - `fix: align texture rendering with gameplay hitboxes`
 
-5. `v5: tune intersections`
-   - Adjust junction placement and visuals based on in-game driving.
-   - Confirm traffic never appears inside junction segments or the buffer.
-   - Acceptance: intersections are visible decoration only; driving physics and
-     collision remain v4-compatible.
-
-6. `bug: fix spectator desync`
-   - Investigate spectator rendering only after player-facing v1-v5 behavior is
-     good enough.
-   - Acceptance: spectator view no longer drifts over time relative to the
-     player view.
-
-### Always Check
+## Always Check
 
 - `python3 scripts/check-racer-parity.py`
 - `rojo build racer.project.json --output build/racer.rbxlx`
-- Publish Racer place after code/art changes that affect the Roblox place.
-- Keep an eye on context/quota during long work. If a concrete remaining-token
-  budget exists and it drops below 10%, stop and report progress before making
-  more changes.
+- `git diff --check`
+- For place-affecting commits: publish Racer place, then verify
+  `PlaceVersion -> git commit` with `scripts/lookup-place-version.sh`.
