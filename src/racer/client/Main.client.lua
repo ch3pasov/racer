@@ -1308,11 +1308,26 @@ local function placeClippedObject(
 		if hitboxWidthScale and useHitboxDebug then
 			local hitboxWidthPx = hitboxWidthScale * WIDTH
 			local hitboxLeftX = x - hitboxWidthPx / 2
+			local hitboxRightX = x + hitboxWidthPx / 2
+			local hitboxVisibleLeftX = math.max(hitboxLeftX, visibleLeftX)
+			local hitboxVisibleRightX = math.min(hitboxRightX, visibleRightX)
+			local hitboxVisibleTopY = math.max(topY, visibleTopY)
+			local hitboxVisibleBottomY = math.min(bottomY, visibleBottomY)
+			local hitboxVisibleWidth = hitboxVisibleRightX - hitboxVisibleLeftX
+			local hitboxVisibleHeight = hitboxVisibleBottomY - hitboxVisibleTopY
+			if hitboxVisibleWidth <= 0 or hitboxVisibleHeight <= 0 then
+				hitbox.Visible = false
+				object.Visible = true
+				return true
+			end
 			hitbox.Position = UDim2.fromScale(
-				(hitboxLeftX - visibleLeftX) / visibleWidth,
-				(topY - visibleTopY) / visibleHeight
+				(hitboxVisibleLeftX - visibleLeftX) / visibleWidth,
+				(hitboxVisibleTopY - visibleTopY) / visibleHeight
 			)
-			hitbox.Size = UDim2.fromScale(hitboxWidthPx / visibleWidth, heightPx / visibleHeight)
+			hitbox.Size = UDim2.fromScale(
+				hitboxVisibleWidth / visibleWidth,
+				hitboxVisibleHeight / visibleHeight
+			)
 			hitbox.ZIndex = object.ZIndex + 3
 			hitbox.Visible = true
 		else

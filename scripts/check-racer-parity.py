@@ -1288,6 +1288,10 @@ for token in [
     "createHitboxOutline(car, PLAYER_CAR_Z_INDEX + 5)",
     'child.Name ~= "Texture" and child.Name ~= "Hitbox"',
     "playerHitbox.Visible = RacerConfig.isFinalLike(mode) and useHitboxDebug",
+    "local hitboxVisibleLeftX = math.max(hitboxLeftX, visibleLeftX)",
+    "local hitboxVisibleRightX = math.min(hitboxRightX, visibleRightX)",
+    "hitboxVisibleWidth / visibleWidth",
+    "hitboxVisibleHeight / visibleHeight",
     'hitboxToggleLabel.Text = `{if useHitboxDebug and available then "[x]" else "[ ]"} Hitboxes`',
     "not state or not RacerConfig.isFinalLike(state.mode.Value)",
 ]:
