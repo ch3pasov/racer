@@ -45,6 +45,7 @@ local SCREEN_MIN_X = 0
 local SCREEN_MAX_X = WIDTH
 local SCREEN_MIN_Y = 0
 local SCREEN_MAX_Y = HEIGHT
+local COLLISION_DEBUG_STRIP_HEIGHT_PX = 10
 
 local BACKGROUND_SPEEDS = {
 	Sky = 0.001,
@@ -53,7 +54,8 @@ local BACKGROUND_SPEEDS = {
 }
 
 local useTextureArt = true
-local useHitboxDebug = false
+local useSpriteboxDebug = false
+local useCollisionboxDebug = false
 local avatarImageCache = {}
 
 local keyMap = {
@@ -540,54 +542,67 @@ local function createTextureImage(parent: Instance, zIndex: number)
 	return image
 end
 
-local function createHitboxOutline(parent: Instance, zIndex: number)
-	local hitbox = Instance.new("Frame")
-	hitbox.Name = "Hitbox"
-	hitbox.AnchorPoint = Vector2.new(0, 0)
-	hitbox.BackgroundTransparency = 1
-	hitbox.BorderSizePixel = 0
-	hitbox.Position = UDim2.fromScale(0, 0)
-	hitbox.Size = UDim2.fromScale(1, 1)
-	hitbox.Visible = false
-	hitbox.ZIndex = zIndex
-	hitbox.Parent = parent
+local function createDebugBox(parent: Instance, name: string, color: Color3, zIndex: number)
+	local box = Instance.new("Frame")
+	box.Name = name
+	box.AnchorPoint = Vector2.new(0, 0)
+	box.BackgroundTransparency = 1
+	box.BorderSizePixel = 0
+	box.Position = UDim2.fromScale(0, 0)
+	box.Size = UDim2.fromScale(1, 1)
+	box.Visible = false
+	box.ZIndex = zIndex
+	box.Parent = parent
 
-	local function createHitboxLine(name: string, position: UDim2, size: UDim2, anchorPoint: Vector2?)
+	local function createBoxLine(lineName: string, position: UDim2, size: UDim2, anchorPoint: Vector2?)
 		local line = Instance.new("Frame")
-		line.Name = name
+		line.Name = lineName
 		line.AnchorPoint = anchorPoint or Vector2.new(0, 0)
-		line.BackgroundColor3 = Color3.fromRGB(255, 56, 56)
+		line.BackgroundColor3 = color
 		line.BorderSizePixel = 0
 		line.Position = position
 		line.Size = size
-		line.ZIndex = zIndex + 1
-		line.Parent = hitbox
+		local lineZIndex = zIndex + 1
+		line.ZIndex = lineZIndex
+		line.Parent = box
 		return line
 	end
 
-	createHitboxLine("Top", UDim2.fromScale(0, 0), UDim2.new(1, 0, 0, 2))
-	createHitboxLine(
+	createBoxLine("Top", UDim2.fromScale(0, 0), UDim2.new(1, 0, 0, 2))
+	createBoxLine(
 		"Bottom",
 		UDim2.fromScale(0, 1),
 		UDim2.new(1, 0, 0, 2),
 		Vector2.new(0, 1)
 	)
-	createHitboxLine("Left", UDim2.fromScale(0, 0), UDim2.new(0, 2, 1, 0))
-	createHitboxLine(
+	createBoxLine("Left", UDim2.fromScale(0, 0), UDim2.new(0, 2, 1, 0))
+	createBoxLine(
 		"Right",
 		UDim2.fromScale(1, 0),
 		UDim2.new(0, 2, 1, 0),
 		Vector2.new(1, 0)
 	)
 
-	local hitboxStroke = Instance.new("UIStroke")
-	hitboxStroke.Name = "Outline"
-	hitboxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	hitboxStroke.Color = Color3.fromRGB(255, 56, 56)
-	hitboxStroke.LineJoinMode = Enum.LineJoinMode.Miter
-	hitboxStroke.Thickness = 1
-	hitboxStroke.Parent = hitbox
-	return hitbox
+	local stroke = Instance.new("UIStroke")
+	stroke.Name = "Outline"
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Color = color
+	stroke.LineJoinMode = Enum.LineJoinMode.Miter
+	stroke.Thickness = 1
+	stroke.Parent = box
+	return box
+end
+
+local function createSpritebox(parent: Instance, zIndex: number)
+	return createDebugBox(parent, "Spritebox", Color3.fromRGB(60, 156, 255), zIndex)
+end
+
+local function createCollisionbox(parent: Instance, zIndex: number)
+	return createDebugBox(parent, "Collisionbox", Color3.fromRGB(255, 56, 56), zIndex)
+end
+
+local function isDebugBox(name: string): boolean
+	return name == "Spritebox" or name == "Collisionbox"
 end
 
 local function applyTextureImage(texture: Instance?, spriteName: string?): boolean
@@ -797,7 +812,8 @@ local function createRenderer(
 			content.Size = UDim2.fromScale(1, 1)
 			rounded(content, 2)
 			createTextureImage(content, 765)
-			createHitboxOutline(object, 768)
+			createSpritebox(object, 768)
+			createCollisionbox(object, 769)
 
 			local spriteCanopy = createFrame(content, "SpriteCanopy", Color3.fromRGB(20, 112, 36), 762)
 			spriteCanopy.Visible = false
@@ -893,7 +909,8 @@ local function createRenderer(
 	hood.Size = UDim2.new(0.86, 0, 0.18, 0)
 	rounded(hood, 2)
 	createTextureImage(car, PLAYER_CAR_Z_INDEX + 3)
-	createHitboxOutline(car, PLAYER_CAR_Z_INDEX + 5)
+	createSpritebox(car, PLAYER_CAR_Z_INDEX + 5)
+	createCollisionbox(car, PLAYER_CAR_Z_INDEX + 7)
 
 	local driverAvatar = Instance.new("ImageLabel")
 	driverAvatar.Name = "DriverAvatar"
@@ -955,7 +972,9 @@ local function showTrafficDetails(object)
 	for _, child in detailRoot:GetChildren() do
 		if child:IsA("GuiObject") then
 			local isSpritePlaceholder = string.sub(child.Name, 1, 6) == "Sprite"
-			child.Visible = not isSpritePlaceholder and child.Name ~= "LiveBillboardText"
+			child.Visible = not isSpritePlaceholder
+				and child.Name ~= "LiveBillboardText"
+				and not isDebugBox(child.Name)
 			child.ZIndex = object.ZIndex
 		end
 	end
@@ -1205,6 +1224,7 @@ local function setTrafficObject(object, car)
 		if child:IsA("GuiObject") and child.Name ~= "Texture" then
 			local isSpriteOnly = string.sub(child.Name, 1, 6) == "Sprite"
 				or child.Name == "LiveBillboardText"
+				or isDebugBox(child.Name)
 			child.Visible = not hasTexture and not isSpriteOnly
 		end
 	end
@@ -1297,7 +1317,8 @@ local function placeClippedObject(
 	widthScale: number,
 	heightScale: number,
 	clipY: number,
-	hitboxWidthScale: number?
+	collisionboxWidthScale: number?,
+	collisionboxHeightScale: number?
 ): boolean
 	local widthPx = widthScale * WIDTH
 	local heightPx = heightScale * HEIGHT
@@ -1331,42 +1352,62 @@ local function placeClippedObject(
 		)
 		detailRoot.Size = UDim2.fromScale(widthPx / visibleWidth, heightPx / visibleHeight)
 	end
-	local hitbox = object:FindFirstChild("Hitbox")
-	if hitbox and hitbox:IsA("GuiObject") then
-		if hitboxWidthScale and useHitboxDebug then
-			local hitboxWidthPx = hitboxWidthScale * WIDTH
-			local hitboxLeftX = x - hitboxWidthPx / 2
-			local hitboxRightX = x + hitboxWidthPx / 2
-			local hitboxVisibleLeftX = math.max(hitboxLeftX, visibleLeftX)
-			local hitboxVisibleRightX = math.min(hitboxRightX, visibleRightX)
-			local hitboxVisibleTopY = math.max(topY, visibleTopY)
-			local hitboxVisibleBottomY = math.min(bottomY, visibleBottomY)
-			local hitboxVisibleWidth = hitboxVisibleRightX - hitboxVisibleLeftX
-			local hitboxVisibleHeight = hitboxVisibleBottomY - hitboxVisibleTopY
-			if hitboxVisibleWidth <= 0 or hitboxVisibleHeight <= 0 then
-				hitbox.Visible = false
-				object.Visible = true
-				return true
-			end
-			hitbox.Position = UDim2.fromScale(
-				(hitboxVisibleLeftX - visibleLeftX) / visibleWidth,
-				(hitboxVisibleTopY - visibleTopY) / visibleHeight
-			)
-			hitbox.Size = UDim2.fromScale(
-				hitboxVisibleWidth / visibleWidth,
-				hitboxVisibleHeight / visibleHeight
-			)
-			hitbox.ZIndex = object.ZIndex + 3
-			for _, child in hitbox:GetChildren() do
-				if child:IsA("GuiObject") then
-					child.ZIndex = object.ZIndex + 4
-				end
-			end
-			hitbox.Visible = true
-		else
-			hitbox.Visible = false
+
+	local function placeDebugBox(
+		name: string,
+		enabled: boolean,
+		boxWidthScale: number?,
+		boxHeightScale: number?,
+		zIndex: number
+	)
+		local box = object:FindFirstChild(name)
+		if not box or not box:IsA("GuiObject") then
+			return
 		end
+		if not enabled or not boxWidthScale or not boxHeightScale then
+			box.Visible = false
+			return
+		end
+
+		local boxWidthPx = boxWidthScale * WIDTH
+		local boxHeightPx = boxHeightScale * HEIGHT
+		local boxLeftX = x - boxWidthPx / 2
+		local boxRightX = x + boxWidthPx / 2
+		local boxTopY = bottomY - boxHeightPx
+		local boxVisibleLeftX = math.max(boxLeftX, visibleLeftX)
+		local boxVisibleRightX = math.min(boxRightX, visibleRightX)
+		local boxVisibleTopY = math.max(boxTopY, visibleTopY)
+		local boxVisibleBottomY = math.min(bottomY, visibleBottomY)
+		local boxVisibleWidth = boxVisibleRightX - boxVisibleLeftX
+		local boxVisibleHeight = boxVisibleBottomY - boxVisibleTopY
+		if boxVisibleWidth <= 0 or boxVisibleHeight <= 0 then
+			box.Visible = false
+			return
+		end
+
+		box.Position = UDim2.fromScale(
+			(boxVisibleLeftX - visibleLeftX) / visibleWidth,
+			(boxVisibleTopY - visibleTopY) / visibleHeight
+		)
+		box.Size = UDim2.fromScale(boxVisibleWidth / visibleWidth, boxVisibleHeight / visibleHeight)
+		box.ZIndex = zIndex
+		local debugLineZIndex = zIndex + 1
+		for _, child in box:GetChildren() do
+			if child:IsA("GuiObject") then
+				child.ZIndex = debugLineZIndex
+			end
+		end
+		box.Visible = true
 	end
+
+	placeDebugBox("Spritebox", useSpriteboxDebug, widthScale, heightScale, object.ZIndex + 3)
+	placeDebugBox(
+		"Collisionbox",
+		useCollisionboxDebug,
+		collisionboxWidthScale,
+		collisionboxHeightScale or heightScale,
+		object.ZIndex + 5
+	)
 	object.Visible = true
 	return true
 end
@@ -1666,8 +1707,18 @@ local function render(renderer, state)
 						spriteSizeScale(carData.width, carData.height, scale, roadWidthSetting)
 					object.ZIndex = objectZIndex(drawLayer)
 					setTrafficObject(object, carData)
-					local hitboxWidth = width * RacerConfig.Traffic.CollisionOverlap
-					if placeClippedObject(object, x, y, width, height, projected.clip, hitboxWidth) then
+					local collisionboxWidth = width * RacerConfig.Traffic.CollisionOverlap
+					if
+						placeClippedObject(
+							object,
+							x,
+							y,
+							width,
+							height,
+							projected.clip,
+							collisionboxWidth
+						)
+					then
 						drawLayer += 1
 						objectCursor = nextCursor
 					end
@@ -1694,7 +1745,19 @@ local function render(renderer, state)
 					spriteSizeScale(spriteDef.width, spriteDef.height, scale, roadWidthSetting)
 				object.ZIndex = objectZIndex(drawLayer)
 				setSpriteObject(object, spriteData, mode)
-				if placeClippedObject(object, spriteX, spriteY, width, height, projected.clip, width) then
+				local collisionboxHeight = math.min(height, COLLISION_DEBUG_STRIP_HEIGHT_PX / HEIGHT)
+				if
+					placeClippedObject(
+						object,
+						spriteX,
+						spriteY,
+						width,
+						height,
+						projected.clip,
+						width,
+						collisionboxHeight
+					)
+				then
 					drawLayer += 1
 					objectCursor = nextCursor
 				end
@@ -1744,7 +1807,7 @@ local function render(renderer, state)
 	local playerHasTexture = textureArtEnabled()
 		and applyTextureImage(playerTexture, playerSprite.name)
 	for _, child in renderer.car:GetChildren() do
-		if child:IsA("GuiObject") and child.Name ~= "Texture" and child.Name ~= "Hitbox" then
+		if child:IsA("GuiObject") and child.Name ~= "Texture" and not isDebugBox(child.Name) then
 			child.Visible = not playerHasTexture
 		end
 	end
@@ -1757,12 +1820,30 @@ local function render(renderer, state)
 	if windshield and windshield:IsA("GuiObject") then
 		windshield.Position = UDim2.new(0.26 + steer * 0.08, 0, 0.13, 0)
 	end
-	local playerHitbox = renderer.car:FindFirstChild("Hitbox")
-	if playerHitbox and playerHitbox:IsA("GuiObject") then
-		playerHitbox.Position = UDim2.fromScale(0, 0)
-		playerHitbox.Size = UDim2.fromScale(1, 1)
-		playerHitbox.ZIndex = playerDrawZIndex + 5
-		playerHitbox.Visible = RacerConfig.isFinalLike(mode) and useHitboxDebug
+	local playerSpritebox = renderer.car:FindFirstChild("Spritebox")
+	if playerSpritebox and playerSpritebox:IsA("GuiObject") then
+		playerSpritebox.Position = UDim2.fromScale(0, 0)
+		playerSpritebox.Size = UDim2.fromScale(1, 1)
+		playerSpritebox.ZIndex = playerDrawZIndex + 5
+		for _, child in playerSpritebox:GetChildren() do
+			if child:IsA("GuiObject") then
+				child.ZIndex = playerDrawZIndex + 6
+			end
+		end
+		playerSpritebox.Visible = RacerConfig.isFinalLike(mode) and useSpriteboxDebug
+	end
+	local playerCollisionbox = renderer.car:FindFirstChild("Collisionbox")
+	if playerCollisionbox and playerCollisionbox:IsA("GuiObject") then
+		local collisionOverlap = RacerConfig.Traffic.CollisionOverlap
+		playerCollisionbox.Position = UDim2.fromScale((1 - collisionOverlap) / 2, 0)
+		playerCollisionbox.Size = UDim2.fromScale(collisionOverlap, 1)
+		playerCollisionbox.ZIndex = playerDrawZIndex + 7
+		for _, child in playerCollisionbox:GetChildren() do
+			if child:IsA("GuiObject") then
+				child.ZIndex = playerDrawZIndex + 8
+			end
+		end
+		playerCollisionbox.Visible = RacerConfig.isFinalLike(mode) and useCollisionboxDebug
 	end
 	local showAvatarPeople = mode == "v5" and playerHasTexture
 	local driverAvatar = renderer.car:FindFirstChild("DriverAvatar")
@@ -1810,7 +1891,8 @@ local function renderSignature(state): string
 		state.settingFogDensity.Value,
 		state.settingLanes.Value,
 		if textureArtEnabled() then "textures" else "placeholders",
-		if useHitboxDebug then "hitboxes" else "no-hitboxes",
+		if useSpriteboxDebug then "spriteboxes" else "no-spriteboxes",
+		if useCollisionboxDebug then "collisionboxes" else "no-collisionboxes",
 		v5BillboardText.Value,
 		math.floor(state.currentLapTime.Value * 10 + 0.5),
 		math.floor(state.lastLapTime.Value * 10 + 0.5),
@@ -2135,7 +2217,7 @@ settingsPanel.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
 settingsPanel.BackgroundTransparency = 0.08
 settingsPanel.BorderSizePixel = 0
 settingsPanel.Position = UDim2.new(1, -18, 0, 114)
-settingsPanel.Size = UDim2.fromOffset(238, 390)
+settingsPanel.Size = UDim2.fromOffset(238, 430)
 settingsPanel.Visible = false
 settingsPanel.ZIndex = 260
 settingsPanel.Parent = fullScreen
@@ -2183,7 +2265,8 @@ local settingRows = {
 }
 
 local textureToggleLabel: TextButton? = nil
-local hitboxToggleLabel: TextButton? = nil
+local spriteboxToggleLabel: TextButton? = nil
+local collisionboxToggleLabel: TextButton? = nil
 
 local function currentSettingText(row): string
 	local state = activeState()
@@ -2242,11 +2325,21 @@ local function updateSettingLabels()
 			then Color3.fromRGB(255, 255, 255)
 			else Color3.fromRGB(150, 156, 164)
 	end
-	if hitboxToggleLabel then
+	if spriteboxToggleLabel then
 		local state = activeState()
 		local available = state ~= nil and RacerConfig.isFinalLike(state.mode.Value)
-		hitboxToggleLabel.Text = `{if useHitboxDebug and available then "[x]" else "[ ]"} Hitboxes`
-		hitboxToggleLabel.TextColor3 = if available
+		spriteboxToggleLabel.Text =
+			`{if useSpriteboxDebug and available then "[x]" else "[ ]"} Spriteboxes`
+		spriteboxToggleLabel.TextColor3 = if available
+			then Color3.fromRGB(255, 255, 255)
+			else Color3.fromRGB(150, 156, 164)
+	end
+	if collisionboxToggleLabel then
+		local state = activeState()
+		local available = state ~= nil and RacerConfig.isFinalLike(state.mode.Value)
+		collisionboxToggleLabel.Text =
+			`{if useCollisionboxDebug and available then "[x]" else "[ ]"} Collisionboxes`
+		collisionboxToggleLabel.TextColor3 = if available
 			then Color3.fromRGB(255, 255, 255)
 			else Color3.fromRGB(150, 156, 164)
 	end
@@ -2268,20 +2361,41 @@ textureToggleLabel.MouseButton1Click:Connect(function()
 	updateSettingLabels()
 end)
 
-hitboxToggleLabel = makeButton(
+spriteboxToggleLabel = makeButton(
 	settingsPanel,
-	"[ ] Hitboxes",
+	"[ ] Spriteboxes",
 	UDim2.fromOffset(12, 286),
 	UDim2.new(1, -24, 0, 32)
 )
-hitboxToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
-hitboxToggleLabel.MouseButton1Click:Connect(function()
+spriteboxToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+spriteboxToggleLabel.MouseButton1Click:Connect(function()
 	local state = activeState()
 	if not state or not RacerConfig.isFinalLike(state.mode.Value) then
 		updateSettingLabels()
 		return
 	end
-	useHitboxDebug = not useHitboxDebug
+	useSpriteboxDebug = not useSpriteboxDebug
+	fullRenderer.lastSignature = nil
+	for _, entry in worldRenderers do
+		entry.renderer.lastSignature = nil
+	end
+	updateSettingLabels()
+end)
+
+collisionboxToggleLabel = makeButton(
+	settingsPanel,
+	"[ ] Collisionboxes",
+	UDim2.fromOffset(12, 324),
+	UDim2.new(1, -24, 0, 32)
+)
+collisionboxToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+collisionboxToggleLabel.MouseButton1Click:Connect(function()
+	local state = activeState()
+	if not state or not RacerConfig.isFinalLike(state.mode.Value) then
+		updateSettingLabels()
+		return
+	end
+	useCollisionboxDebug = not useCollisionboxDebug
 	fullRenderer.lastSignature = nil
 	for _, entry in worldRenderers do
 		entry.renderer.lastSignature = nil
@@ -2290,7 +2404,7 @@ hitboxToggleLabel.MouseButton1Click:Connect(function()
 end)
 
 local resetButton =
-	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 334), UDim2.new(1, -24, 0, 36))
+	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 374), UDim2.new(1, -24, 0, 36))
 resetButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("ResetSettings")
 end)
