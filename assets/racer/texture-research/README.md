@@ -11,7 +11,7 @@ of this experiment and should not change.
 - Runtime mapping: `src/racer/shared/RacerTextures.lua`
 - Important constraint: texture rects may change, but gameplay sprite dimensions
   in `RacerConfig` and visible sprite bottom alignment must stay unchanged.
-- Published Roblox image asset: `111381485210627`
+- Published Roblox image asset: `122356841133514`
 
 ## Roblox Creator Marketplace Search
 

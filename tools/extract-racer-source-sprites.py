@@ -90,6 +90,25 @@ def crop(rows, bounds, pad=6):
     return out_w, len(out_rows), out_rows
 
 
+def fix_truck_rear_window(rows):
+    width = len(rows[0]) // 4
+    height = len(rows)
+    top_y = round(height * 0.1)
+    bottom_y = round(height * 0.32)
+    for y in range(top_y, bottom_y):
+        t = (y - top_y) / max(1, bottom_y - top_y)
+        left = round(width * (0.25 + (0.18 - 0.25) * t))
+        right = round(width * (0.75 + (0.82 - 0.75) * t))
+        shade = round(14 + 14 * (1 - t))
+        for x in range(left, right):
+            offset = x * 4
+            r, g, b, a = rows[y][offset : offset + 4]
+            greenish = g > 70 and g > r * 1.25 and g > b * 1.25
+            if a == 0 or greenish:
+                rows[y][offset : offset + 4] = bytes((shade, shade + 24, shade + 20, 255))
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("sheet", type=Path)
@@ -108,6 +127,8 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     for name, item in zip(names, bounds):
         width, height, sprite_rows = crop(rows, item)
+        if name == "TRUCK":
+            sprite_rows = fix_truck_rear_window(sprite_rows)
         out = args.out / f"{name}.png"
         write_png(out, width, height, sprite_rows)
         print(out)
