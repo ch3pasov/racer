@@ -333,13 +333,18 @@ for token in [
 
 for token in [
     'recordBillboardText.Name = "RacerV7BillboardText"',
-    'DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")',
-    'DataStoreService:GetDataStore("RacerV7PersonalRunsV1")',
+    "local function v7RecordGlobalStore()",
+    'recordGlobalStore = DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")',
+    "local function v7RecordPersonalStore()",
+    'recordPersonalStore = DataStoreService:GetDataStore("RacerV7PersonalRunsV1")',
     "not RacerConfig.hasRecordBoards(session.definition.Mode)",
     "createV7Leaderboards()",
 ]:
     if token not in SERVER:
         fail(f"server record boards must belong to v7 only: {token}")
+
+if "RacerV6GlobalLap" in SERVER or "RacerV6PersonalRuns" in SERVER:
+    fail("server record board persistence must not use old RacerV6 DataStore names")
 
 for token in [
     "addStraight(track, ROAD.LENGTH.SHORT)",

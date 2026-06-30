@@ -174,8 +174,22 @@ local BACKGROUND_SPEEDS = {
 local sessions = {}
 local perfLines = {}
 local recordLeaderboardLabels = {}
-local recordGlobalStore = DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")
-local recordPersonalStore = DataStoreService:GetDataStore("RacerV7PersonalRunsV1")
+local recordGlobalStore = nil
+local recordPersonalStore = nil
+
+local function v7RecordGlobalStore()
+	if not recordGlobalStore then
+		recordGlobalStore = DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")
+	end
+	return recordGlobalStore
+end
+
+local function v7RecordPersonalStore()
+	if not recordPersonalStore then
+		recordPersonalStore = DataStoreService:GetDataStore("RacerV7PersonalRunsV1")
+	end
+	return recordPersonalStore
+end
 
 local function formatLapTime(seconds: number): string
 	local minutes = math.floor(seconds / 60)
@@ -463,7 +477,7 @@ end
 
 local function readPersonalTop(player: Player)
 	local ok, raw = pcall(function()
-		return recordPersonalStore:GetAsync(tostring(player.UserId))
+		return v7RecordPersonalStore():GetAsync(tostring(player.UserId))
 	end)
 	if not ok then
 		return {}
@@ -483,7 +497,7 @@ end
 
 local function readGlobalTop(limit: number)
 	local ok, pages = pcall(function()
-		return recordGlobalStore:GetSortedAsync(true, limit)
+		return v7RecordGlobalStore():GetSortedAsync(true, limit)
 	end)
 	if not ok then
 		return {}
@@ -567,7 +581,7 @@ local function recordLapForRecordBoards(session, player: Player, lapTime: number
 	setRecordLeaderboardText("self", `v7 Your Top 10\nSaving {formatLapTime(lapTime)}...`)
 	task.spawn(function()
 		local globalOk, globalErr = pcall(function()
-			recordGlobalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
+			v7RecordGlobalStore():UpdateAsync(tostring(player.UserId), function(oldValue)
 				if typeof(oldValue) == "number" and oldValue > 0 and oldValue <= lapMs then
 					return oldValue
 				end
@@ -575,7 +589,7 @@ local function recordLapForRecordBoards(session, player: Player, lapTime: number
 			end)
 		end)
 		local personalOk, personalErr = pcall(function()
-			recordPersonalStore:UpdateAsync(tostring(player.UserId), function(oldValue)
+			v7RecordPersonalStore():UpdateAsync(tostring(player.UserId), function(oldValue)
 				local runs = decodePersonalRuns(oldValue)
 				table.insert(runs, {
 					time = lapTime,
