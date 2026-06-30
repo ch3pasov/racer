@@ -6,12 +6,12 @@ of this experiment and should not change.
 ## Current Texture Pipeline
 
 - Production atlas: `assets/racer/textures/racer-sprites-v3.png`
-- Atlas size: 1024 x 1024 RGBA
+- Atlas size: 2048 x 2048 RGBA
+- Art sources: `assets/racer/textures/v3-sources/*.png`
 - Runtime mapping: `src/racer/shared/RacerTextures.lua`
-- Important constraint: any replacement should preserve the existing atlas slot
-  coordinates and sprite bottom alignment, so gameplay/render hitboxes stay
-  unchanged.
-- Published Roblox image asset: `138379301696836`
+- Important constraint: texture rects may change, but gameplay sprite dimensions
+  in `RacerConfig` and visible sprite bottom alignment must stay unchanged.
+- Published Roblox image asset: `82979424857053`
 
 ## Roblox Creator Marketplace Search
 

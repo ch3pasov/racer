@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import json
 import re
 import sys
 import math
@@ -111,15 +112,29 @@ if not texture_png.exists():
 texture_meta = ROOT / "assets/racer/textures/racer-sprites-v3.json"
 if not texture_meta.exists():
     fail("local racer texture atlas metadata must exist")
-if "racer-sprites-v3.png" not in texture_meta.read_text():
+texture_meta_data = json.loads(texture_meta.read_text())
+if texture_meta_data.get("image") != "racer-sprites-v3.png":
     fail("local racer texture metadata must describe the v3 atlas")
+if texture_meta_data.get("size") != [2048, 2048]:
+    fail("local racer texture metadata must describe the 2048x2048 v3 atlas")
 texture_width, texture_height, texture_rows = read_png_rgba(texture_png)
+if (texture_width, texture_height) != (2048, 2048):
+    fail("racer-sprites-v3 atlas must be 2048x2048")
+if not re.search(r"SheetSize\s*=\s*Vector2\.new\(2048,\s*2048\)", TEXTURES):
+    fail("RacerTextures.SheetSize must match the 2048x2048 v3 atlas")
+texture_source_dir = ROOT / "assets/racer/textures/v3-sources"
+if not texture_source_dir.exists():
+    fail("racer-sprites-v3 must have committed source PNG sprites")
+texture_rects = {}
 for match in re.finditer(
     r"([A-Z0-9_]+)\s*=\s*\{\s*x\s*=\s*(\d+),\s*y\s*=\s*(\d+),\s*w\s*=\s*(\d+),\s*h\s*=\s*(\d+)\s*\}",
     TEXTURES,
 ):
     name, x, y, w, h = match.groups()
     x, y, w, h = int(x), int(y), int(w), int(h)
+    texture_rects[name] = {"x": x, "y": y, "w": w, "h": h}
+    if texture_meta_data["sprites"].get(name) != texture_rects[name]:
+        fail(f"texture rect for {name} must match racer-sprites-v3.json")
     if x < 0 or y < 0 or x + w > texture_width or y + h > texture_height:
         fail(f"texture rect for {name} is outside the atlas")
     bottom_row = texture_rows[y + h - 1]
@@ -197,6 +212,8 @@ expected_sprites = {
 }
 
 for name, (width, height) in expected_sprites.items():
+    if not (texture_source_dir / f"{name}.png").exists():
+        fail(f"missing source PNG for {name}")
     require(
         rf"{name}\s*=\s*\{{[^}}]*width\s*=\s*{width}[^}}]*height\s*=\s*{height}",
         CONFIG,
