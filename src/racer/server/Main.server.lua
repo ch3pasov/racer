@@ -201,6 +201,14 @@ local function leaderboardEmpty(title: string): string
 	return `{title}\n--`
 end
 
+local function leaderboardLoading(title: string): string
+	return `{title}\nLoading...`
+end
+
+local function leaderboardUnavailable(title: string): string
+	return `{title}\nUnavailable`
+end
+
 local function formatLeaderboard(title: string, rows): string
 	if not rows or #rows == 0 then
 		return leaderboardEmpty(title)
@@ -480,7 +488,7 @@ local function readPersonalTop(player: Player)
 		return v7RecordPersonalStore():GetAsync(tostring(player.UserId))
 	end)
 	if not ok then
-		return {}
+		return {}, false
 	end
 	local runs = decodePersonalRuns(raw)
 	table.sort(runs, function(left, right)
@@ -492,7 +500,7 @@ local function readPersonalTop(player: Player)
 	for _, row in runs do
 		row.name = "You"
 	end
-	return runs
+	return runs, true
 end
 
 local function readGlobalTop(limit: number)
@@ -500,7 +508,7 @@ local function readGlobalTop(limit: number)
 		return v7RecordGlobalStore():GetSortedAsync(true, limit)
 	end)
 	if not ok then
-		return {}
+		return {}, false
 	end
 	local rows = {}
 	for _, entry in pages:GetCurrentPage() do
@@ -511,7 +519,7 @@ local function readGlobalTop(limit: number)
 			time = (entry.value or 0) / 1000,
 		})
 	end
-	return rows
+	return rows, true
 end
 
 local function friendIdSet(player: Player)
@@ -520,7 +528,7 @@ local function friendIdSet(player: Player)
 		return Players:GetFriendsAsync(player.UserId)
 	end)
 	if not ok then
-		return ids
+		return ids, false
 	end
 	while true do
 		for _, friend in pages:GetCurrentPage() do
@@ -533,48 +541,88 @@ local function friendIdSet(player: Player)
 			pages:AdvanceToNextPageAsync()
 		end)
 		if not advanceOk then
-			break
+			return ids, false
 		end
 	end
-	return ids
+	return ids, true
 end
 
 local function refreshRecordLeaderboards(player: Player?)
 	if not player then
-		local globalRows = readGlobalTop(10)
-		setRecordLeaderboardText("self", leaderboardEmpty("v7 Your Top 10"))
-		setRecordLeaderboardText("friends", leaderboardEmpty("v7 Friends Top 10"))
-		setRecordLeaderboardText("global", formatLeaderboard("v7 Global Top 10", globalRows))
-		setRecordBillboardTop(globalRows)
+		setRecordLeaderboardText("global", leaderboardLoading("v7 Global Top 10"))
+		task.spawn(function()
+			local globalRows, globalOk = readGlobalTop(10)
+			setRecordLeaderboardText("self", leaderboardEmpty("v7 Your Top 10"))
+			setRecordLeaderboardText("friends", leaderboardEmpty("v7 Friends Top 10"))
+			setRecordLeaderboardText(
+				"global",
+				if globalOk
+					then formatLeaderboard("v7 Global Top 10", globalRows)
+					else leaderboardUnavailable("v7 Global Top 10")
+			)
+			setRecordBillboardTop(if globalOk then globalRows else nil)
+		end)
 		return
 	end
 
+	setRecordLeaderboardText("self", leaderboardLoading("v7 Your Top 10"))
+	setRecordLeaderboardText("friends", leaderboardLoading("v7 Friends Top 10"))
+	setRecordLeaderboardText("global", leaderboardLoading("v7 Global Top 10"))
 	task.spawn(function()
-		local selfRows = readPersonalTop(player)
-		local globalRows = readGlobalTop(100)
-		local friendIds = friendIdSet(player)
+		local selfRows, selfOk = readPersonalTop(player)
+		local globalRows, globalOk = readGlobalTop(100)
+		local friendIds, friendsOk = friendIdSet(player)
 		local friendRows = {}
-		for _, row in globalRows do
-			if friendIds[row.userId] then
-				table.insert(friendRows, row)
-				if #friendRows >= 10 then
-					break
+		if globalOk and friendsOk then
+			for _, row in globalRows do
+				if friendIds[row.userId] then
+					table.insert(friendRows, row)
+					if #friendRows >= 10 then
+						break
+					end
 				end
 			end
 		end
 		local globalTopTen = {}
-		for index = 1, math.min(10, #globalRows) do
-			table.insert(globalTopTen, globalRows[index])
+		if globalOk then
+			for index = 1, math.min(10, #globalRows) do
+				table.insert(globalTopTen, globalRows[index])
+			end
 		end
-		setRecordLeaderboardText("self", formatLeaderboard("v7 Your Top 10", selfRows))
-		setRecordLeaderboardText("friends", formatLeaderboard("v7 Friends Top 10", friendRows))
-		setRecordLeaderboardText("global", formatLeaderboard("v7 Global Top 10", globalTopTen))
-		setRecordBillboardTop(globalTopTen)
+		setRecordLeaderboardText(
+			"self",
+			if selfOk
+				then formatLeaderboard("v7 Your Top 10", selfRows)
+				else leaderboardUnavailable("v7 Your Top 10")
+		)
+		setRecordLeaderboardText(
+			"friends",
+			if globalOk and friendsOk
+				then formatLeaderboard("v7 Friends Top 10", friendRows)
+				else leaderboardUnavailable("v7 Friends Top 10")
+		)
+		setRecordLeaderboardText(
+			"global",
+			if globalOk
+				then formatLeaderboard("v7 Global Top 10", globalTopTen)
+				else leaderboardUnavailable("v7 Global Top 10")
+		)
+		setRecordBillboardTop(if globalOk then globalTopTen else nil)
 	end)
 end
 
+local function isValidV7RecordLap(session, player: Player?, lapTime: number): boolean
+	return player ~= nil
+		and session.activePlayer == player
+		and RacerConfig.hasRecordBoards(session.definition.Mode)
+		and typeof(lapTime) == "number"
+		and lapTime == lapTime
+		and lapTime > 0
+		and lapTime < 60 * 60
+end
+
 local function recordLapForRecordBoards(session, player: Player, lapTime: number)
-	if not RacerConfig.hasRecordBoards(session.definition.Mode) or lapTime <= 0 then
+	if not isValidV7RecordLap(session, player, lapTime) then
 		return
 	end
 	local lapMs = math.floor(lapTime * 1000 + 0.5)

@@ -340,7 +340,11 @@ for token in [
     'recordGlobalStore = DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")',
     "local function v7RecordPersonalStore()",
     'recordPersonalStore = DataStoreService:GetDataStore("RacerV7PersonalRunsV1")',
-    "not RacerConfig.hasRecordBoards(session.definition.Mode)",
+    "local function isValidV7RecordLap(session, player: Player?, lapTime: number): boolean",
+    "session.activePlayer == player",
+    "RacerConfig.hasRecordBoards(session.definition.Mode)",
+    "leaderboardUnavailable",
+    "leaderboardLoading",
     "createV7Leaderboards()",
 ]:
     if token not in SERVER:
