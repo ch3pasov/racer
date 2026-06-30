@@ -115,13 +115,13 @@ if not texture_meta.exists():
 texture_meta_data = json.loads(texture_meta.read_text())
 if texture_meta_data.get("image") != "racer-sprites-v3.png":
     fail("local racer texture metadata must describe the v3 atlas")
-if texture_meta_data.get("size") != [2048, 2048]:
-    fail("local racer texture metadata must describe the 2048x2048 v3 atlas")
+if texture_meta_data.get("size") != [1024, 1024]:
+    fail("local racer texture metadata must describe the 1024x1024 v3 atlas")
 texture_width, texture_height, texture_rows = read_png_rgba(texture_png)
-if (texture_width, texture_height) != (2048, 2048):
-    fail("racer-sprites-v3 atlas must be 2048x2048")
-if not re.search(r"SheetSize\s*=\s*Vector2\.new\(2048,\s*2048\)", TEXTURES):
-    fail("RacerTextures.SheetSize must match the 2048x2048 v3 atlas")
+if (texture_width, texture_height) != (1024, 1024):
+    fail("racer-sprites-v3 atlas must be 1024x1024")
+if not re.search(r"SheetSize\s*=\s*Vector2\.new\(1024,\s*1024\)", TEXTURES):
+    fail("RacerTextures.SheetSize must match the 1024x1024 v3 atlas")
 texture_source_dir = ROOT / "assets/racer/textures/v3-sources"
 if not texture_source_dir.exists():
     fail("racer-sprites-v3 must have committed source PNG sprites")

@@ -7,8 +7,8 @@ import zlib
 from pathlib import Path
 
 
-WIDTH = 2048
-HEIGHT = 2048
+WIDTH = 1024
+HEIGHT = 1024
 OUT_DIR = Path("assets/racer/textures")
 SOURCE_DIR = OUT_DIR / "v3-sources"
 PNG_PATH = OUT_DIR / "racer-sprites-v3.png"
@@ -58,16 +58,10 @@ SPRITE_DIMENSIONS = {
 
 def texture_scale(name):
     if name.startswith("PLAYER_"):
-        return 2.5
+        return 1.0
     if name in {"CAR01", "CAR02", "CAR03", "CAR04", "TRUCK", "SEMI"}:
-        return 2.5
-    if name.startswith("BILLBOARD"):
-        return 1.5
-    if name in {"PALM_TREE", "TREE1", "TREE2"}:
-        return 1.25
-    if name in {"DEAD_TREE1", "DEAD_TREE2", "COLUMN"}:
-        return 1.35
-    return 1.45
+        return 1.0
+    return 0.65
 
 
 def texture_dimensions(name):
