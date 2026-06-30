@@ -8,8 +8,8 @@ from pathlib import Path
 WIDTH = 1024
 HEIGHT = 1024
 OUT_DIR = Path("assets/racer/textures")
-PNG_PATH = OUT_DIR / "racer-sprites-v2.png"
-JSON_PATH = OUT_DIR / "racer-sprites-v2.json"
+PNG_PATH = OUT_DIR / "racer-sprites-v3.png"
+JSON_PATH = OUT_DIR / "racer-sprites-v3.json"
 
 pixels = bytearray(WIDTH * HEIGHT * 4)
 
@@ -74,6 +74,25 @@ def color_shift(color, amount):
 
 def inset_rect(x, y, w, h, inset, color):
     rect(round(x + w * inset), round(y + h * inset), round(w * (1 - inset * 2)), round(h * (1 - inset * 2)), color)
+
+
+def glow_rect(x, y, w, h, color, alpha=70):
+    shadow = (color[0], color[1], color[2], alpha)
+    rect(round(x - 1), round(y), round(w + 2), round(h), shadow)
+    rect(round(x), round(y - 1), round(w), round(h + 2), shadow)
+
+
+def capsule(x, y, w, h, color):
+    rect(round(x + h / 2), round(y), round(max(0, w - h)), round(h), color)
+    ellipse(x + h / 2, y + h / 2, h / 2, h / 2, color)
+    ellipse(x + w - h / 2, y + h / 2, h / 2, h / 2, color)
+
+
+def tiny_checker(x, y, w, h, color_a, color_b, cell=4):
+    for yy in range(round(y), round(y + h)):
+        for xx in range(round(x), round(x + w)):
+            color = color_a if ((xx // cell) + (yy // cell)) % 2 == 0 else color_b
+            put(xx, yy, color)
 
 
 def png_write(path):
@@ -154,6 +173,56 @@ def align_sprite_to_hitbox(name, bottom_padding=0, side_padding=4):
 	shift_sprite_pixels(x, y, w, h, dx, dy)
 
 
+def alpha_points(x, y, w, h):
+	points = []
+	for yy in range(y, y + h):
+		for xx in range(x, x + w):
+			alpha = pixels[(yy * WIDTH + xx) * 4 + 3]
+			if alpha > 0:
+				points.append((xx - x, yy - y, alpha))
+	return points
+
+
+def validate_sprite(name):
+	rect_data = sprites[name]
+	x, y, w, h = rect_data["x"], rect_data["y"], rect_data["w"], rect_data["h"]
+	if x < 0 or y < 0 or x + w > WIDTH or y + h > HEIGHT:
+		raise RuntimeError(f"{name} rect is outside atlas")
+	points = alpha_points(x, y, w, h)
+	if not points:
+		raise RuntimeError(f"{name} has no visible pixels")
+	bottom_alpha = sum(1 for xx in range(x, x + w) if pixels[((y + h - 1) * WIDTH + xx) * 4 + 3] > 0)
+	if bottom_alpha == 0:
+		raise RuntimeError(f"{name} must touch the bottom of its hitbox rect")
+	coverage = len(points) / (w * h)
+	if coverage < 0.012:
+		raise RuntimeError(f"{name} has too little visible coverage: {coverage:.3f}")
+
+
+def validate_palm_direction():
+	rect_data = sprites["PALM_TREE"]
+	x, y, w, h = rect_data["x"], rect_data["y"], rect_data["w"], rect_data["h"]
+	points = alpha_points(x, y, w, h)
+	top = [(px, alpha) for px, py, alpha in points if py < h * 0.42]
+	lower = [(px, alpha) for px, py, alpha in points if py > h * 0.55]
+	if not top or not lower:
+		raise RuntimeError("PALM_TREE needs both crown and trunk pixels")
+	top_center = sum(px * alpha for px, alpha in top) / sum(alpha for _, alpha in top)
+	lower_center = sum(px * alpha for px, alpha in lower) / sum(alpha for _, alpha in lower)
+	left_crown = sum(alpha for px, alpha in top if px < w * 0.5)
+	right_crown = sum(alpha for px, alpha in top if px >= w * 0.5)
+	if not (top_center < lower_center - w * 0.08 and left_crown > right_crown * 1.2):
+		raise RuntimeError(
+			f"PALM_TREE must read right-to-left: top={top_center:.1f} lower={lower_center:.1f} left={left_crown} right={right_crown}"
+		)
+
+
+def validate_atlas():
+	for name in sprites:
+		validate_sprite(name)
+	validate_palm_direction()
+
+
 def car_draw(base, accent, cabin, turn=0, truck=False, semi=False):
     def draw(x, y, w, h):
         cx = x + w / 2
@@ -161,9 +230,10 @@ def car_draw(base, accent, cabin, turn=0, truck=False, semi=False):
         body_h = h * (0.32 if not semi else 0.38)
         skew = turn * w * 0.12
         outline = (24, 26, 30, 255)
-        shade = color_shift(base, -36)
-        light = color_shift(base, 34)
-        rect(round(x + w * 0.12), round(y + h * 0.86), round(w * 0.76), round(h * 0.08), (10, 12, 14, 90))
+        shade = color_shift(base, -42)
+        deep = color_shift(base, -68)
+        light = color_shift(base, 42)
+        glow_rect(x + w * 0.12, y + h * 0.86, w * 0.76, h * 0.08, (10, 12, 14, 255), 90)
         polygon(
             [
                 (x + w * 0.13 + skew, body_y - h * 0.02),
@@ -182,6 +252,7 @@ def car_draw(base, accent, cabin, turn=0, truck=False, semi=False):
             ],
             base,
         )
+        rect(round(x + w * 0.18 + skew), round(body_y + h * 0.04), round(w * 0.64), max(2, round(h * 0.035)), light)
         polygon(
             [
                 (x + w * 0.17 + skew, body_y),
@@ -205,10 +276,14 @@ def car_draw(base, accent, cabin, turn=0, truck=False, semi=False):
             rect(round(x + w * 0.28 + skew), round(y + h * 0.19), round(w * 0.44), round(h * 0.3), base)
             rect(round(x + w * 0.34 + skew), round(y + h * 0.25), round(w * 0.32), round(h * 0.14), cabin)
             rect(round(x + w * 0.38 + skew), round(y + h * 0.27), round(w * 0.1), round(h * 0.04), color_shift(cabin, 52))
+            rect(round(x + w * 0.49 + skew), round(y + h * 0.27), round(w * 0.1), round(h * 0.04), color_shift(cabin, 28))
+            rect(round(x + w * 0.22 + skew), round(y + h * 0.55), round(w * 0.56), max(2, round(h * 0.035)), deep)
         elif truck:
             rect(round(x + w * 0.18 + skew), round(y + h * 0.26), round(w * 0.64), round(h * 0.29), outline)
             rect(round(x + w * 0.22 + skew), round(y + h * 0.29), round(w * 0.56), round(h * 0.23), base)
             rect(round(x + w * 0.3 + skew), round(y + h * 0.33), round(w * 0.4), round(h * 0.11), cabin)
+            rect(round(x + w * 0.34 + skew), round(y + h * 0.35), round(w * 0.13), max(2, round(h * 0.035)), color_shift(cabin, 46))
+            rect(round(x + w * 0.52 + skew), round(y + h * 0.35), round(w * 0.12), max(2, round(h * 0.035)), color_shift(cabin, 24))
         else:
             polygon(
                 [
@@ -221,6 +296,15 @@ def car_draw(base, accent, cabin, turn=0, truck=False, semi=False):
             )
             polygon(
                 [
+                    (cx - w * 0.16 + skew, y + h * 0.18),
+                    (cx + w * 0.16 + skew, y + h * 0.18),
+                    (cx + w * 0.25 + skew, y + h * 0.28),
+                    (cx - w * 0.25 + skew, y + h * 0.28),
+                ],
+                color_shift(base, 24),
+            )
+            polygon(
+                [
                     (cx - w * 0.23 + skew, y + h * 0.28),
                     (cx + w * 0.23 + skew, y + h * 0.28),
                     (cx + w * 0.32 + skew * 0.4, y + h * 0.49),
@@ -230,12 +314,17 @@ def car_draw(base, accent, cabin, turn=0, truck=False, semi=False):
             )
             rect(round(cx - w * 0.2 + skew), round(y + h * 0.32), round(w * 0.4), round(h * 0.12), cabin)
             rect(round(cx - w * 0.15 + skew), round(y + h * 0.34), round(w * 0.12), max(2, round(h * 0.035)), color_shift(cabin, 54))
+            rect(round(cx + w * 0.02 + skew), round(y + h * 0.34), round(w * 0.12), max(2, round(h * 0.035)), color_shift(cabin, 28))
         rect(round(x + w * 0.09), round(y + h * 0.71), round(w * 0.15), round(h * 0.24), outline)
         rect(round(x + w * 0.76), round(y + h * 0.71), round(w * 0.15), round(h * 0.24), outline)
-        rect(round(x + w * 0.16), round(y + h * 0.79), round(w * 0.15), round(h * 0.1), accent)
-        rect(round(x + w * 0.69), round(y + h * 0.79), round(w * 0.15), round(h * 0.1), accent)
+        rect(round(x + w * 0.15), round(y + h * 0.78), round(w * 0.16), round(h * 0.1), accent)
+        rect(round(x + w * 0.69), round(y + h * 0.78), round(w * 0.16), round(h * 0.1), accent)
+        rect(round(x + w * 0.18), round(y + h * 0.78), round(w * 0.07), max(2, round(h * 0.03)), color_shift(accent, 36))
+        rect(round(x + w * 0.72), round(y + h * 0.78), round(w * 0.07), max(2, round(h * 0.03)), color_shift(accent, 36))
         rect(round(x + w * 0.25), round(y + h * 0.63), round(w * 0.5), max(2, round(h * 0.06)), color_shift(accent, -10))
+        rect(round(x + w * 0.36), round(y + h * 0.67), round(w * 0.28), max(2, round(h * 0.025)), deep)
         rect(round(x + w * 0.43), round(y + h * 0.86), round(w * 0.14), max(2, round(h * 0.04)), outline)
+        rect(round(x + w * 0.46), round(y + h * 0.9), round(w * 0.08), max(2, round(h * 0.025)), color_shift(outline, 34))
 
     return draw
 
@@ -380,34 +469,52 @@ def tree_draw(leaf, trunk, palm=False, dead=False):
         trunk_dark = color_shift(trunk, -28)
         trunk_light = color_shift(trunk, 24)
         if palm:
-            ellipse(x + w * 0.5, y + h * 0.97, w * 0.22, h * 0.045, (9, 12, 10, 90))
-            line(x + w * 0.5, y + h * 0.95, x + w * 0.55, y + h * 0.22, max(3, w // 12), trunk)
-            line(x + w * 0.47, y + h * 0.92, x + w * 0.52, y + h * 0.28, max(2, w // 22), trunk_light)
-            for angle in [-70, -40, -10, 25, 55, 90]:
+            ellipse(x + w * 0.58, y + h * 0.97, w * 0.2, h * 0.045, (9, 12, 10, 95))
+            line(x + w * 0.58, y + h * 0.95, x + w * 0.48, y + h * 0.24, max(4, w // 11), trunk_dark)
+            line(x + w * 0.55, y + h * 0.93, x + w * 0.45, y + h * 0.27, max(3, w // 14), trunk)
+            line(x + w * 0.51, y + h * 0.9, x + w * 0.42, y + h * 0.3, max(2, w // 24), trunk_light)
+            for knot_y in [0.42, 0.56, 0.7, 0.82]:
+                ellipse(x + w * (0.49 + knot_y * 0.08), y + h * knot_y, w * 0.035, h * 0.022, trunk_light)
+            crown_x = x + w * 0.43
+            crown_y = y + h * 0.22
+            ellipse(crown_x, crown_y + h * 0.015, w * 0.1, h * 0.07, (124, 85, 48, 255))
+            for angle, length, width_scale in [(-178, 0.58, 12), (-148, 0.58, 12), (-116, 0.52, 13), (-82, 0.44, 15), (-48, 0.28, 22), (-12, 0.08, 34)]:
                 rad = math.radians(angle)
                 line(
-                    x + w * 0.54,
-                    y + h * 0.24,
-                    x + w * (0.54 + math.cos(rad) * 0.42),
-                    y + h * (0.24 + math.sin(rad) * 0.24),
-                    max(3, w // 16),
+                    crown_x,
+                    crown_y,
+                    crown_x + math.cos(rad) * w * length,
+                    crown_y + math.sin(rad) * h * 0.32,
+                    max(3, w // width_scale),
                     leaf,
                 )
-            for angle in [-54, -20, 42, 76]:
+            for angle, length in [(-166, 0.42), (-132, 0.44), (-96, 0.38), (-58, 0.3)]:
                 rad = math.radians(angle)
                 line(
-                    x + w * 0.54,
-                    y + h * 0.24,
-                    x + w * (0.54 + math.cos(rad) * 0.3),
-                    y + h * (0.24 + math.sin(rad) * 0.18),
+                    crown_x - w * 0.02,
+                    crown_y + h * 0.02,
+                    crown_x + math.cos(rad) * w * length,
+                    crown_y + math.sin(rad) * h * 0.24,
                     max(2, w // 24),
                     leaf_light,
+                )
+            for angle, length in [(-156, 0.46), (-108, 0.4), (-34, 0.22)]:
+                rad = math.radians(angle)
+                line(
+                    crown_x + w * 0.015,
+                    crown_y + h * 0.03,
+                    crown_x + math.cos(rad) * w * length,
+                    crown_y + math.sin(rad) * h * 0.26,
+                    max(2, w // 30),
+                    leaf_dark,
                 )
         elif dead:
             line(x + w * 0.5, y + h * 0.95, x + w * 0.48, y + h * 0.2, max(3, w // 12), trunk)
             line(x + w * 0.54, y + h * 0.9, x + w * 0.51, y + h * 0.23, max(2, w // 20), trunk_dark)
-            for sx, sy, ex, ey in [(0.48, 0.45, 0.25, 0.28), (0.5, 0.58, 0.75, 0.42), (0.49, 0.32, 0.62, 0.18)]:
-                line(x + w * sx, y + h * sy, x + w * ex, y + h * ey, max(2, w // 20), trunk)
+            for sx, sy, ex, ey in [(0.48, 0.45, 0.25, 0.28), (0.5, 0.58, 0.75, 0.42), (0.49, 0.32, 0.62, 0.18), (0.5, 0.72, 0.33, 0.58), (0.5, 0.38, 0.7, 0.31)]:
+                line(x + w * sx, y + h * sy, x + w * ex, y + h * ey, max(2, w // 22), trunk)
+            for sx, sy, ex, ey in [(0.5, 0.48, 0.35, 0.36), (0.52, 0.6, 0.67, 0.5)]:
+                line(x + w * sx, y + h * sy, x + w * ex, y + h * ey, max(1, w // 34), trunk_light)
         else:
             ellipse(x + w * 0.5, y + h * 0.94, w * 0.28, h * 0.05, (9, 12, 10, 90))
             rect(round(x + w * 0.44), round(y + h * 0.5), round(w * 0.12), round(h * 0.42), trunk)
@@ -419,6 +526,8 @@ def tree_draw(leaf, trunk, palm=False, dead=False):
             ellipse(x + w * 0.66, y + h * 0.48, w * 0.25, h * 0.18, leaf)
             ellipse(x + w * 0.42, y + h * 0.27, w * 0.14, h * 0.09, leaf_light)
             ellipse(x + w * 0.62, y + h * 0.34, w * 0.12, h * 0.08, leaf_light)
+            line(x + w * 0.42, y + h * 0.48, x + w * 0.56, y + h * 0.86, max(1, w // 40), trunk_dark)
+            line(x + w * 0.64, y + h * 0.48, x + w * 0.52, y + h * 0.84, max(1, w // 42), trunk_dark)
 
     return draw
 
@@ -426,23 +535,29 @@ def tree_draw(leaf, trunk, palm=False, dead=False):
 def billboard_draw(color, accent):
     def draw(x, y, w, h):
         frame = (34, 39, 45, 255)
-        rect(round(x + w * 0.06), round(y + h * 0.16), round(w * 0.88), round(h * 0.58), frame)
-        rect(round(x + w * 0.08), round(y + h * 0.18), round(w * 0.84), round(h * 0.54), color)
-        inset_rect(x + w * 0.08, y + h * 0.18, w * 0.84, h * 0.54, 0.04, color_shift(color, 18))
-        rect(round(x + w * 0.12), round(y + h * 0.24), round(w * 0.76), round(h * 0.1), accent)
-        rect(round(x + w * 0.16), round(y + h * 0.38), round(w * 0.3), round(h * 0.055), color_shift(accent, -30))
-        rect(round(x + w * 0.54), round(y + h * 0.57), round(w * 0.26), round(h * 0.05), color_shift(accent, -18))
-        ellipse(x + w * 0.32, y + h * 0.5, w * 0.12, h * 0.12, accent)
+        shadow = (7, 9, 12, 90)
+        rect(round(x + w * 0.08), round(y + h * 0.77), round(w * 0.84), max(2, round(h * 0.04)), shadow)
+        rect(round(x + w * 0.05), round(y + h * 0.13), round(w * 0.9), round(h * 0.62), frame)
+        rect(round(x + w * 0.075), round(y + h * 0.16), round(w * 0.85), round(h * 0.56), color)
+        inset_rect(x + w * 0.075, y + h * 0.16, w * 0.85, h * 0.56, 0.035, color_shift(color, 20))
+        rect(round(x + w * 0.09), round(y + h * 0.18), round(w * 0.82), max(2, round(h * 0.035)), color_shift(color, 48))
+        capsule(x + w * 0.13, y + h * 0.25, w * 0.5, h * 0.1, accent)
+        rect(round(x + w * 0.18), round(y + h * 0.4), round(w * 0.25), max(2, round(h * 0.055)), color_shift(accent, -34))
+        rect(round(x + w * 0.56), round(y + h * 0.58), round(w * 0.24), max(2, round(h * 0.05)), color_shift(accent, -20))
+        ellipse(x + w * 0.32, y + h * 0.54, w * 0.12, h * 0.13, accent)
         polygon(
             [
-                (x + w * 0.52, y + h * 0.42),
-                (x + w * 0.78, y + h * 0.3),
-                (x + w * 0.74, y + h * 0.62),
+                (x + w * 0.53, y + h * 0.43),
+                (x + w * 0.81, y + h * 0.3),
+                (x + w * 0.75, y + h * 0.64),
             ],
             accent,
         )
+        rect(round(x + w * 0.58), round(y + h * 0.45), round(w * 0.12), max(2, round(h * 0.035)), color_shift(accent, 38))
         rect(round(x + w * 0.22), round(y + h * 0.72), round(w * 0.08), round(h * 0.2), frame)
         rect(round(x + w * 0.7), round(y + h * 0.72), round(w * 0.08), round(h * 0.2), frame)
+        rect(round(x + w * 0.24), round(y + h * 0.74), round(w * 0.04), round(h * 0.16), color_shift(frame, 32))
+        rect(round(x + w * 0.72), round(y + h * 0.74), round(w * 0.04), round(h * 0.16), color_shift(frame, 32))
 
     return draw
 
@@ -451,6 +566,8 @@ def rock_draw(color):
     def draw(x, y, w, h):
         dark = color_shift(color, -28)
         light = color_shift(color, 28)
+        shadow = (9, 12, 10, 80)
+        ellipse(x + w * 0.52, y + h * 0.81, w * 0.38, h * 0.055, shadow)
         polygon(
             [
                 (x + w * 0.12, y + h * 0.78),
@@ -480,6 +597,8 @@ def rock_draw(color):
             light,
         )
         line(x + w * 0.26, y + h * 0.62, x + w * 0.43, y + h * 0.5, 2, dark)
+        line(x + w * 0.56, y + h * 0.42, x + w * 0.72, y + h * 0.5, 2, color_shift(color, 42))
+        line(x + w * 0.55, y + h * 0.66, x + w * 0.76, y + h * 0.72, 2, dark)
 
     return draw
 
@@ -489,12 +608,16 @@ def bush_draw(color):
         dark = color_shift(color, -28)
         light = color_shift(color, 28)
         ellipse(x + w * 0.5, y + h * 0.78, w * 0.38, h * 0.06, (9, 12, 10, 80))
-        ellipse(x + w * 0.28, y + h * 0.65, w * 0.23, h * 0.22, dark)
-        ellipse(x + w * 0.72, y + h * 0.67, w * 0.23, h * 0.2, dark)
-        ellipse(x + w * 0.28, y + h * 0.62, w * 0.2, h * 0.2, color)
-        ellipse(x + w * 0.5, y + h * 0.52, w * 0.28, h * 0.26, color)
-        ellipse(x + w * 0.72, y + h * 0.64, w * 0.2, h * 0.18, color)
+        ellipse(x + w * 0.27, y + h * 0.66, w * 0.24, h * 0.23, dark)
+        ellipse(x + w * 0.72, y + h * 0.68, w * 0.24, h * 0.21, dark)
+        ellipse(x + w * 0.28, y + h * 0.62, w * 0.21, h * 0.21, color)
+        ellipse(x + w * 0.5, y + h * 0.52, w * 0.3, h * 0.27, color)
+        ellipse(x + w * 0.72, y + h * 0.64, w * 0.21, h * 0.19, color)
+        ellipse(x + w * 0.44, y + h * 0.69, w * 0.25, h * 0.16, color_shift(color, -12))
         ellipse(x + w * 0.45, y + h * 0.45, w * 0.12, h * 0.09, light)
+        ellipse(x + w * 0.62, y + h * 0.54, w * 0.09, h * 0.07, light)
+        line(x + w * 0.23, y + h * 0.68, x + w * 0.38, y + h * 0.56, 2, dark)
+        line(x + w * 0.68, y + h * 0.7, x + w * 0.56, y + h * 0.55, 2, dark)
 
     return draw
 
@@ -510,6 +633,12 @@ def cactus_draw(x, y, w, h):
     rect(round(x + w * 0.24), round(y + h * 0.44), round(w * 0.14), round(h * 0.28), green)
     rect(round(x + w * 0.62), round(y + h * 0.36), round(w * 0.14), round(h * 0.32), green)
     ellipse(x + w * 0.51, y + h * 0.22, w * 0.07, h * 0.08, green)
+    ellipse(x + w * 0.31, y + h * 0.44, w * 0.07, h * 0.08, green)
+    ellipse(x + w * 0.69, y + h * 0.36, w * 0.07, h * 0.08, green)
+    for px in [0.49, 0.52, 0.67, 0.3]:
+        line(x + w * px, y + h * 0.32, x + w * px, y + h * 0.76, 1, light)
+    for sx, sy in [(0.4, 0.5), (0.62, 0.48), (0.5, 0.66)]:
+        rect(round(x + w * sx), round(y + h * sy), 1, 1, color_shift(light, 28))
 
 
 def stump_draw(x, y, w, h):
@@ -518,6 +647,9 @@ def stump_draw(x, y, w, h):
     rect(round(x + w * 0.56), round(y + h * 0.4), round(w * 0.08), round(h * 0.34), (92, 62, 42, 255))
     ellipse(x + w * 0.5, y + h * 0.35, w * 0.18, h * 0.1, (168, 120, 78, 255))
     line(x + w * 0.35, y + h * 0.5, x + w * 0.65, y + h * 0.44, 2, (92, 62, 42, 255))
+    line(x + w * 0.42, y + h * 0.42, x + w * 0.36, y + h * 0.74, 2, (82, 54, 36, 255))
+    line(x + w * 0.58, y + h * 0.4, x + w * 0.63, y + h * 0.72, 2, (96, 64, 42, 255))
+    ellipse(x + w * 0.5, y + h * 0.35, w * 0.08, h * 0.04, (126, 82, 52, 255))
 
 
 def column_draw(x, y, w, h):
@@ -529,6 +661,10 @@ def column_draw(x, y, w, h):
     rect(round(x + w * 0.39), round(y + h * 0.32), round(w * 0.04), round(h * 0.44), color_shift(stone, 18))
     rect(round(x + w * 0.24), round(y + h * 0.8), round(w * 0.52), round(h * 0.1), stone)
     rect(round(x + w * 0.58), round(y + h * 0.3), round(w * 0.08), round(h * 0.5), shade)
+    rect(round(x + w * 0.3), round(y + h * 0.2), round(w * 0.4), max(2, round(h * 0.025)), color_shift(stone, 24))
+    for yy in [0.42, 0.56, 0.7]:
+        rect(round(x + w * 0.35), round(y + h * yy), round(w * 0.3), 1, shade)
+    line(x + w * 0.49, y + h * 0.34, x + w * 0.45, y + h * 0.74, 1, shade)
 
 
 def atlas():
@@ -602,6 +738,7 @@ def atlas():
 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 atlas()
+validate_atlas()
 png_write(PNG_PATH)
 JSON_PATH.write_text(json.dumps({"image": PNG_PATH.name, "size": [WIDTH, HEIGHT], "sprites": sprites}, indent=2) + "\n")
 print(PNG_PATH)

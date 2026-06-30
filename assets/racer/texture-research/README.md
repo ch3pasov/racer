@@ -5,12 +5,13 @@ of this experiment and should not change.
 
 ## Current Texture Pipeline
 
-- Production atlas: `assets/racer/textures/racer-sprites-v2.png`
+- Production atlas: `assets/racer/textures/racer-sprites-v3.png`
 - Atlas size: 1024 x 1024 RGBA
 - Runtime mapping: `src/racer/shared/RacerTextures.lua`
 - Important constraint: any replacement should preserve the existing atlas slot
   coordinates and sprite bottom alignment, so gameplay/render hitboxes stay
   unchanged.
+- Published Roblox image asset: `138379301696836`
 
 ## Roblox Creator Marketplace Search
 
@@ -86,11 +87,17 @@ incrementally. It is safer than Marketplace reuse because it gives us:
 - consistent rear-view car language;
 - reproducible edits and small diffs.
 
-Next useful texture iteration would be a deliberate `racer-sprites-v3.png` from
-the procedural generator, focused on:
+The first production-quality iteration is `racer-sprites-v3.png` from the
+procedural generator, focused on:
 
 - cleaner palm/tree silhouettes at distance;
 - more distinctive NPC car colors and roofs;
 - less flat billboard art;
 - slightly stronger outlines on roadside objects;
 - preserving all existing sprite rectangles and collision/render parity.
+
+The v3 palm is intentionally asymmetric: it follows the original right-side
+roadside read, with the trunk/crown direction moving from right toward left
+across the road. The generator and parity check both validate that silhouette so
+future edits do not accidentally replace it with a centered or right-facing
+palm.

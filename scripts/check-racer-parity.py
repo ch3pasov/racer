@@ -105,9 +105,14 @@ texture_asset = re.search(r'Image\s*=\s*"rbxassetid://(\d+)"', TEXTURES)
 if not texture_asset:
     fail("RacerTextures.Image must point at an uploaded Roblox image asset")
 
-texture_png = ROOT / "assets/racer/textures/racer-sprites-v2.png"
+texture_png = ROOT / "assets/racer/textures/racer-sprites-v3.png"
 if not texture_png.exists():
     fail("local racer texture atlas must exist")
+texture_meta = ROOT / "assets/racer/textures/racer-sprites-v3.json"
+if not texture_meta.exists():
+    fail("local racer texture atlas metadata must exist")
+if "racer-sprites-v3.png" not in texture_meta.read_text():
+    fail("local racer texture metadata must describe the v3 atlas")
 texture_width, texture_height, texture_rows = read_png_rgba(texture_png)
 for match in re.finditer(
     r"([A-Z0-9_]+)\s*=\s*\{\s*x\s*=\s*(\d+),\s*y\s*=\s*(\d+),\s*w\s*=\s*(\d+),\s*h\s*=\s*(\d+)\s*\}",
@@ -121,6 +126,35 @@ for match in re.finditer(
     bottom_alpha_count = sum(1 for pixel_x in range(x, x + w) if bottom_row[pixel_x * 4 + 3] > 0)
     if bottom_alpha_count == 0:
         fail(f"texture sprite {name} must touch the bottom of its hitbox rect")
+
+palm_match = re.search(
+    r"PALM_TREE\s*=\s*\{\s*x\s*=\s*(\d+),\s*y\s*=\s*(\d+),\s*w\s*=\s*(\d+),\s*h\s*=\s*(\d+)\s*\}",
+    TEXTURES,
+)
+if not palm_match:
+    fail("texture rect missing for PALM_TREE")
+palm_x, palm_y, palm_w, palm_h = [int(value) for value in palm_match.groups()]
+top_pixels = []
+lower_pixels = []
+for yy in range(palm_y, palm_y + palm_h):
+    for xx in range(palm_x, palm_x + palm_w):
+        alpha = texture_rows[yy][xx * 4 + 3]
+        if alpha == 0:
+            continue
+        local_x = xx - palm_x
+        local_y = yy - palm_y
+        if local_y < palm_h * 0.42:
+            top_pixels.append((local_x, alpha))
+        elif local_y > palm_h * 0.55:
+            lower_pixels.append((local_x, alpha))
+if not top_pixels or not lower_pixels:
+    fail("PALM_TREE must include visible crown and trunk pixels")
+palm_top_center = sum(x * alpha for x, alpha in top_pixels) / sum(alpha for _, alpha in top_pixels)
+palm_lower_center = sum(x * alpha for x, alpha in lower_pixels) / sum(alpha for _, alpha in lower_pixels)
+palm_left_crown = sum(alpha for x, alpha in top_pixels if x < palm_w * 0.5)
+palm_right_crown = sum(alpha for x, alpha in top_pixels if x >= palm_w * 0.5)
+if not (palm_top_center < palm_lower_center - palm_w * 0.08 and palm_left_crown > palm_right_crown * 1.2):
+    fail("PALM_TREE texture must read right-to-left like the original right-side palm")
 
 expected_sprites = {
     "PALM_TREE": (215, 540),

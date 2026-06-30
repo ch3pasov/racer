@@ -39,6 +39,9 @@
   `RacerV7...` naming and are guarded by the `v7` record-board feature flag.
 - Texture checks verify that every gameplay sprite has a texture rect, stays
   inside the atlas, and touches the bottom edge.
+- Production `racer-sprites-v3` texture art exists as a shared Retro HD atlas
+  with stronger car/object silhouettes, a right-to-left palm read matching the
+  original roadside direction, and stricter texture validation.
 
 ## Not Done Yet
 
@@ -46,8 +49,6 @@
   presentation and deterministic fallback people when avatar imagery fails.
 - `v7 Record Boards` still needs published-server validation and more graceful
   handling around DataStore or friends API failures.
-- Production-quality textures are not done. Current texture art is still a
-  deterministic atlas, not final generated or hand-finished art.
 - Spectator display desync is still open; active-player rendering is the
   priority, but spectator correctness must be fixed as a shared renderer task.
 
@@ -81,6 +82,7 @@ be published from a clean committed tree.
 5. Shared fixes after the version split
    - `fix: repair spectator renderer desync`
    - `fix: align texture rendering with gameplay hitboxes`
+   - `textures: add high-quality racer sprites v3`
 
 ## Always Check
 
