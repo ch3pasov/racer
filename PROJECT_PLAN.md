@@ -27,20 +27,25 @@
 
 - `v5 Mobile Controls` exists as the current fifth stand and inherits `v4 Final`
   without changing `v1-v4`.
+- `v6 Driver Occupants` and `v7 Record Boards` exist as explicit inherited
+  versions in code: `v6` derives from `v5`, `v7` derives from `v6`, and both
+  have dedicated feature gates.
 - Active-player HUD fixes for `v4+` are in place, including persistent
   `Last Lap`, fullscreen active-player HUD, and mobile side-panel layout.
 - Mobile racer controls use on-screen buttons and temporarily disable Roblox
   character controls while the player is inside a racer screen.
 - Optional debug overlays exist for `Spriteboxes` and `Collisionboxes`.
+- Record board persistence, DataStore names, and live billboard replication use
+  `RacerV7...` naming and are guarded by the `v7` record-board feature flag.
 - Texture checks verify that every gameplay sprite has a texture rect, stays
   inside the atlas, and touches the bottom edge.
 
 ## Not Done Yet
 
-- `v6 Driver Occupants` is not yet a clean standalone version. Existing avatar
-  occupant work must be moved behind the `v6` feature boundary.
-- `v7 Record Boards` is not yet a clean standalone version. Existing record
-  board/DataStore/live billboard work must be moved behind the `v7` boundary.
+- `v6 Driver Occupants` still needs a better in-car avatar/passenger
+  presentation and deterministic fallback people when avatar imagery fails.
+- `v7 Record Boards` still needs published-server validation and more graceful
+  handling around DataStore or friends API failures.
 - Production-quality textures are not done. Current texture art is still a
   deterministic atlas, not final generated or hand-finished art.
 - Spectator display desync is still open; active-player rendering is the
@@ -52,15 +57,16 @@ Each step should be its own commit and, when it affects the Roblox place, should
 be published from a clean committed tree.
 
 1. `docs: update racer version roadmap`
-   - Replace the old `v5 Lab` roadmap with the explicit `v5/v6/v7` chain above.
+   - Keep the plan synchronized with the current code-backed `v5/v6/v7` chain
+     and record which roadmap items are already implemented.
 
-2. `version: split driver and records into v6 v7`
-   - Add `v6 Driver Occupants` as `v5 + driver/passenger feature flags`.
-   - Add `v7 Record Boards` as `v6 + records/live billboard feature flags`.
-   - Activate `v6` and `v7` stands in the lab.
-   - Move record DataStores, board names, and live billboard replication from
-     `RacerV6...` to `RacerV7...`.
-   - Update parity checks so the version inheritance cannot silently regress.
+2. `version: harden driver and records boundaries`
+   - Keep `v5` limited to mobile controls, `v6` limited to driver/passenger
+     presentation, and `v7` limited to records/live billboard features.
+   - Ensure record DataStores, board names, and live billboard replication stay
+     under `RacerV7...` names.
+   - Keep parity checks covering version inheritance and feature gates so the
+     boundaries cannot silently regress.
 
 3. `v6: improve avatar car occupants`
    - Improve driver/passenger presentation only after the `v6` boundary is
