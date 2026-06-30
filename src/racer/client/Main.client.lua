@@ -58,6 +58,14 @@ local useTextureArt = true
 local useSpriteboxDebug = false
 local useCollisionboxDebug = false
 local avatarImageCache = {}
+local occupantFallbackPalette = {
+	Color3.fromRGB(255, 202, 88),
+	Color3.fromRGB(108, 221, 205),
+	Color3.fromRGB(122, 148, 255),
+	Color3.fromRGB(255, 116, 128),
+	Color3.fromRGB(134, 240, 150),
+	Color3.fromRGB(255, 221, 78),
+}
 
 local keyMap = {
 	[Enum.KeyCode.A] = "left",
@@ -141,7 +149,8 @@ local function thumbnailForUserId(userId: number): string?
 		return nil
 	end
 	if avatarImageCache[userId] ~= nil then
-		return avatarImageCache[userId]
+		local cached = avatarImageCache[userId]
+		return if cached ~= false then cached else nil
 	end
 	local ok, image = pcall(function()
 		return Players:GetUserThumbnailAsync(
@@ -161,6 +170,11 @@ local function passengerUserIdFor(activeUserId: number): number
 		end
 	end
 	return 0
+end
+
+local function fallbackOccupantColor(userId: number, seatIndex: number): Color3
+	local seed = math.abs(userId) + seatIndex * 37
+	return occupantFallbackPalette[seed % #occupantFallbackPalette + 1]
 end
 
 local function anyBusyStatus(): string?
@@ -541,6 +555,41 @@ local function createTextureImage(parent: Instance, zIndex: number)
 	image.ZIndex = zIndex
 	image.Parent = parent
 	return image
+end
+
+local function createOccupantFallback(parent: Instance, name: string, zIndex: number)
+	local fallback = Instance.new("Frame")
+	fallback.Name = name
+	fallback.BackgroundTransparency = 1
+	fallback.Position = UDim2.fromScale(0.34, 0.12)
+	fallback.Size = UDim2.fromScale(0.16, 0.32)
+	fallback.Visible = false
+	fallback.ZIndex = zIndex
+	fallback.Parent = parent
+
+	local head = Instance.new("Frame")
+	head.Name = "Head"
+	head.AnchorPoint = Vector2.new(0.5, 0)
+	head.BackgroundColor3 = Color3.fromRGB(236, 210, 184)
+	head.BorderSizePixel = 0
+	head.Position = UDim2.fromScale(0.5, 0)
+	head.Size = UDim2.fromScale(0.48, 0.48)
+	head.ZIndex = zIndex + 1
+	head.Parent = fallback
+	rounded(head, 99)
+
+	local body = Instance.new("Frame")
+	body.Name = "Body"
+	body.AnchorPoint = Vector2.new(0.5, 1)
+	body.BackgroundColor3 = Color3.fromRGB(255, 202, 88)
+	body.BorderSizePixel = 0
+	body.Position = UDim2.fromScale(0.5, 1)
+	body.Size = UDim2.fromScale(0.84, 0.48)
+	body.ZIndex = zIndex
+	body.Parent = fallback
+	rounded(body, 3)
+
+	return fallback
 end
 
 local function createDebugBox(parent: Instance, name: string, color: Color3, zIndex: number)
@@ -937,6 +986,9 @@ local function createRenderer(
 	passengerAvatar.Visible = false
 	passengerAvatar.Parent = car
 	rounded(passengerAvatar, 3)
+
+	createOccupantFallback(car, "DriverFallback", PLAYER_CAR_Z_INDEX + 4)
+	createOccupantFallback(car, "PassengerFallback", PLAYER_CAR_Z_INDEX + 4)
 
 	local status =
 		createLabel(root, "Status", UDim2.new(0.5, -320, 0, 12), UDim2.fromOffset(640, 42), 15)
@@ -1933,6 +1985,30 @@ local function render(renderer, state)
 	if windshield and windshield:IsA("GuiObject") then
 		windshield.Position = UDim2.new(0.26 + steer * 0.08, 0, 0.13, 0)
 	end
+	local function setOccupantFallback(
+		fallbackName: string,
+		userId: number,
+		seatIndex: number,
+		baseX: number,
+		visible: boolean
+	)
+		local fallback = renderer.car:FindFirstChild(fallbackName)
+		if not fallback or not fallback:IsA("GuiObject") then
+			return
+		end
+		fallback.Position = UDim2.new(baseX + steer * 0.035, 0, 0.12, 0)
+		fallback.Visible = visible
+		fallback.ZIndex = playerDrawZIndex + 4
+		local head = fallback:FindFirstChild("Head")
+		if head and head:IsA("GuiObject") then
+			head.ZIndex = playerDrawZIndex + 5
+		end
+		local body = fallback:FindFirstChild("Body")
+		if body and body:IsA("GuiObject") then
+			body.BackgroundColor3 = fallbackOccupantColor(userId, seatIndex)
+			body.ZIndex = playerDrawZIndex + 4
+		end
+	end
 	local playerSpritebox = renderer.car:FindFirstChild("Spritebox")
 	if playerSpritebox and playerSpritebox:IsA("GuiObject") then
 		playerSpritebox.Position = UDim2.fromScale(0, 0)
@@ -1957,21 +2033,41 @@ local function render(renderer, state)
 		end
 		playerCollisionbox.Visible = RacerConfig.isFinalLike(mode) and useCollisionboxDebug
 	end
-	local showAvatarPeople = RacerConfig.hasDriverOccupants(mode) and playerHasTexture
+	local showOccupants = RacerConfig.hasDriverOccupants(mode) and state.activeUserId.Value > 0
 	local driverAvatar = renderer.car:FindFirstChild("DriverAvatar")
+	local driverImage = thumbnailForUserId(state.activeUserId.Value)
+	local showDriverAvatar = showOccupants and driverImage ~= nil
 	if driverAvatar and driverAvatar:IsA("ImageLabel") then
-		local image = thumbnailForUserId(state.activeUserId.Value)
-		driverAvatar.Image = image or ""
-		driverAvatar.Visible = showAvatarPeople and image ~= nil
+		driverAvatar.Image = driverImage or ""
+		driverAvatar.Visible = showDriverAvatar
 		driverAvatar.Position = UDim2.new(0.34 + steer * 0.035, 0, 0.16, 0)
+		driverAvatar.ZIndex = playerDrawZIndex + 5
 	end
+	setOccupantFallback(
+		"DriverFallback",
+		state.activeUserId.Value,
+		1,
+		0.34,
+		showOccupants and not showDriverAvatar
+	)
+
+	local passengerUserId = passengerUserIdFor(state.activeUserId.Value)
+	local passengerImage = thumbnailForUserId(passengerUserId)
+	local showPassengerAvatar = showOccupants and passengerImage ~= nil
 	local passengerAvatar = renderer.car:FindFirstChild("PassengerAvatar")
 	if passengerAvatar and passengerAvatar:IsA("ImageLabel") then
-		local passengerImage = thumbnailForUserId(passengerUserIdFor(state.activeUserId.Value))
 		passengerAvatar.Image = passengerImage or ""
-		passengerAvatar.Visible = showAvatarPeople and passengerImage ~= nil
+		passengerAvatar.Visible = showPassengerAvatar
 		passengerAvatar.Position = UDim2.new(0.52 + steer * 0.035, 0, 0.16, 0)
+		passengerAvatar.ZIndex = playerDrawZIndex + 5
 	end
+	setOccupantFallback(
+		"PassengerFallback",
+		passengerUserId,
+		2,
+		0.52,
+		showOccupants and not showPassengerAvatar
+	)
 
 	if RacerConfig.isFinalLike(mode) and renderer.statusEnabled ~= false then
 		renderer.status.Visible = true

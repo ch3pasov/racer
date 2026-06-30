@@ -325,7 +325,10 @@ for token in [
 
 for token in [
     'ReplicatedStorage:WaitForChild("RacerV7BillboardText")',
-    "RacerConfig.hasDriverOccupants(mode) and playerHasTexture",
+    "RacerConfig.hasDriverOccupants(mode) and state.activeUserId.Value > 0",
+    'createOccupantFallback(car, "DriverFallback", PLAYER_CAR_Z_INDEX + 4)',
+    'createOccupantFallback(car, "PassengerFallback", PLAYER_CAR_Z_INDEX + 4)',
+    "fallbackOccupantColor(userId, seatIndex)",
     "RacerConfig.hasRecordBoards(mode)",
 ]:
     if token not in CLIENT:
