@@ -42,6 +42,36 @@ def component_bounds(rows):
     return bounds
 
 
+def sort_components(bounds, expected_count):
+    if expected_count == 9:
+        expected_rows = 3
+    elif expected_count in {6, 8}:
+        expected_rows = 2
+    else:
+        expected_rows = 1
+    if expected_rows == 1:
+        return sorted(bounds, key=lambda item: ((item[0] + item[2]) / 2, (item[1] + item[3]) / 2))
+
+    centers = sorted(((item[1] + item[3]) / 2, index, item) for index, item in enumerate(bounds))
+    gaps = [
+        (centers[index + 1][0] - centers[index][0], index)
+        for index in range(len(centers) - 1)
+    ]
+    split_after = {index for _, index in sorted(gaps, reverse=True)[: expected_rows - 1]}
+    rows = []
+    current = []
+    for index, (_, _, item) in enumerate(centers):
+        current.append(item)
+        if index in split_after:
+            rows.append(current)
+            current = []
+    rows.append(current)
+    ordered = []
+    for row in rows:
+        ordered.extend(sorted(row, key=lambda item: (item[0] + item[2]) / 2))
+    return ordered
+
+
 def crop(rows, bounds, pad=6):
     width = len(rows[0]) // 4
     height = len(rows)
@@ -72,7 +102,7 @@ def main():
     _, _, rows = read_png_rgba(args.sheet)
     key = (0, 255, 0) if args.key == "green" else (255, 0, 255)
     rows = remove_chroma(rows, key=key)
-    bounds = sorted(component_bounds(rows), key=lambda item: (item[1] // 80, item[0]))
+    bounds = sort_components(component_bounds(rows), len(names))
     if len(bounds) != len(names):
         raise SystemExit(f"expected {len(names)} components, found {len(bounds)} in {args.sheet}")
     args.out.mkdir(parents=True, exist_ok=True)
