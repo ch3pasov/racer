@@ -3182,6 +3182,10 @@ local function hudNeedsSync(state): boolean
 		or (not active and controlsBound)
 end
 
+local function worldScreenNeedsRealtime(state): boolean
+	return state.activeUserId.Value ~= 0
+end
+
 local worldRenderAccumulator = WORLD_RENDER_INTERVAL
 local settingsLabelAccumulator = SETTINGS_LABEL_INTERVAL
 local hudCleanupAccumulator = 0
@@ -3337,13 +3341,17 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		worldRenderAccumulator = WORLD_RENDER_INTERVAL
 		perfStats.lastWorldObjects = 0
 		perfStats.lastWorldRows = 0
-	elseif worldRenderAccumulator >= WORLD_RENDER_INTERVAL then
-		worldRenderAccumulator %= WORLD_RENDER_INTERVAL
+	else
+		local renderIdleWorldScreens = worldRenderAccumulator >= WORLD_RENDER_INTERVAL
+		if renderIdleWorldScreens then
+			worldRenderAccumulator %= WORLD_RENDER_INTERVAL
+		end
 		local worldRenderStart = os.clock()
 		local renderedWorldScreens = 0
 		local camera = Workspace.CurrentCamera
 		local cameraPosition = if camera then camera.CFrame.Position else nil
 		for screenId, entry in worldRenderers do
+			local screenState = states[screenId]
 			local screenPart = entry.screenPart
 			local enabled = true
 			if cameraPosition and screenPart and screenPart:IsA("BasePart") then
@@ -3352,7 +3360,11 @@ RunService.RenderStepped:Connect(function(deltaTime)
 				enabled = distance <= WORLD_SCREEN_MAX_DISTANCE
 			end
 			entry.surfaceGui.Enabled = enabled
-			if enabled and renderIfChanged(entry.renderer, states[screenId]) then
+			if
+				enabled
+				and (renderIdleWorldScreens or worldScreenNeedsRealtime(screenState))
+				and renderIfChanged(entry.renderer, screenState)
+			then
 				renderedWorldScreens += 1
 			end
 		end

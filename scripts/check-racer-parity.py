@@ -1034,6 +1034,14 @@ if 'string.format("%.4f", offset)' in CONFIG:
 if 'string.format("%.6f", offset)' not in CONFIG:
     fail("replicated traffic offsets should keep enough precision for spectator rendering")
 
+for token in [
+    "local function worldScreenNeedsRealtime(state): boolean",
+    "return state.activeUserId.Value ~= 0",
+    "renderIdleWorldScreens or worldScreenNeedsRealtime(screenState)",
+]:
+    if token not in CLIENT:
+        fail(f"active spectator world screens must render without idle throttling: {token}")
+
 require(
     r"if\s+orderedTrafficBySegment\s*==\s*nil\s*then\s*for\s+_,\s*item\s+in\s+trafficItems\s+or\s+\{\}\s+do",
     CLIENT,
