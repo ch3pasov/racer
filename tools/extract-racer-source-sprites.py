@@ -106,6 +106,20 @@ def fix_truck_rear_window(rows):
     return rows
 
 
+def clean_player_chroma_edges(rows):
+    for row in rows:
+        for x in range(len(row) // 4):
+            offset = x * 4
+            r, g, b, a = row[offset : offset + 4]
+            if a == 0:
+                continue
+            if g > 70 and g > r * 1.18 and g > b * 1.18:
+                row[offset : offset + 4] = b"\x00\x00\x00\x00"
+            elif g > r + 28 and g > b + 28:
+                row[offset + 1] = max(r, b)
+    return rows
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("sheet", type=Path)
@@ -126,6 +140,8 @@ def main():
         width, height, sprite_rows = crop(rows, item)
         if name == "TRUCK":
             sprite_rows = fix_truck_rear_window(sprite_rows)
+        elif name.startswith("PLAYER_"):
+            sprite_rows = clean_player_chroma_edges(sprite_rows)
         out = args.out / f"{name}.png"
         write_png(out, width, height, sprite_rows)
         print(out)

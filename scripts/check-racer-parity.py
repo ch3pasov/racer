@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import hashlib
 import json
 import re
 import sys
@@ -224,6 +225,18 @@ for name, (width, height) in expected_sprites.items():
         TEXTURES,
         f"texture rect missing for {name}",
     )
+    if name.startswith("PLAYER_"):
+        rect = texture_rects.get(name)
+        if not rect or rect["w"] < round(width * 1.5) or rect["h"] < round(height * 1.5):
+            fail(f"{name} texture rect should keep a higher-resolution player sprite source for Roblox scaling")
+
+player_hashes = {
+    hashlib.sha256((texture_source_dir / f"{name}.png").read_bytes()).hexdigest()
+    for name in expected_sprites
+    if name.startswith("PLAYER_")
+}
+if len(player_hashes) < 6:
+    fail("player source PNGs must include distinct steering/hill variants")
 
 if abs(PLAYER_WIDTH - 0.3) > 1e-9:
     fail("player collision width must be SPRITES.PLAYER_STRAIGHT.w * SPRITES.SCALE = 0.3")

@@ -58,7 +58,7 @@ SPRITE_DIMENSIONS = {
 
 def texture_scale(name):
     if name.startswith("PLAYER_"):
-        return 1.0
+        return 1.5
     if name in {"CAR01", "CAR02", "CAR03", "CAR04", "TRUCK", "SEMI"}:
         return 1.0
     return 0.65
@@ -363,6 +363,20 @@ def validate_sprite(name, rows):
         raise RuntimeError(f"{name} visible coverage is too low: {coverage:.3f}")
 
 
+def clean_player_chroma_edges(rows):
+    for row in rows:
+        for x in range(len(row) // 4):
+            offset = x * 4
+            r, g, b, a = row[offset : offset + 4]
+            if a == 0:
+                continue
+            if g > 70 and g > r * 1.18 and g > b * 1.18:
+                row[offset : offset + 4] = b"\x00\x00\x00\x00"
+            elif g > r + 28 and g > b + 28:
+                row[offset + 1] = max(r, b)
+    return rows
+
+
 def validate_palm(rows):
     width = len(rows[0]) // 4
     height = len(rows)
@@ -388,7 +402,11 @@ def read_source_sprite(name):
     _, _, rows = read_png_rgba(path)
     key = (0, 255, 0) if name.startswith(("PLAYER_", "CAR", "TRUCK", "SEMI", "BILLBOARD")) else (255, 0, 255)
     rows = remove_chroma(rows, key=key)
+    if name.startswith("PLAYER_"):
+        rows = clean_player_chroma_edges(rows)
     fitted = fit_to_rect(rows, *texture_dimensions(name))
+    if name.startswith("PLAYER_"):
+        fitted = clean_player_chroma_edges(fitted)
     validate_sprite(name, fitted)
     if name == "PALM_TREE":
         validate_palm(fitted)

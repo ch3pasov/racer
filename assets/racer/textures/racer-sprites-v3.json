@@ -143,15 +143,69 @@
       "w": 127,
       "h": 91
     },
-    "TRUCK": {
+    "PLAYER_UPHILL_STRAIGHT": {
       "x": 642,
       "y": 757,
+      "w": 120,
+      "h": 68
+    },
+    "PLAYER_UPHILL_LEFT": {
+      "x": 16,
+      "y": 768,
+      "w": 120,
+      "h": 68
+    },
+    "PLAYER_UPHILL_RIGHT": {
+      "x": 152,
+      "y": 770,
+      "w": 120,
+      "h": 68
+    },
+    "TRUCK": {
+      "x": 778,
+      "y": 780,
       "w": 100,
       "h": 78
     },
-    "CAR03": {
+    "PLAYER_STRAIGHT": {
+      "x": 288,
+      "y": 841,
+      "w": 120,
+      "h": 62
+    },
+    "PLAYER_LEFT": {
+      "x": 642,
+      "y": 841,
+      "w": 120,
+      "h": 62
+    },
+    "PLAYER_RIGHT": {
       "x": 16,
-      "y": 768,
+      "y": 852,
+      "w": 120,
+      "h": 62
+    },
+    "PLAYER_DOWNHILL_STRAIGHT": {
+      "x": 152,
+      "y": 854,
+      "w": 120,
+      "h": 62
+    },
+    "PLAYER_DOWNHILL_LEFT": {
+      "x": 424,
+      "y": 864,
+      "w": 120,
+      "h": 62
+    },
+    "PLAYER_DOWNHILL_RIGHT": {
+      "x": 778,
+      "y": 874,
+      "w": 120,
+      "h": 62
+    },
+    "CAR03": {
+      "x": 894,
+      "y": 780,
       "w": 88,
       "h": 55
     },
@@ -168,64 +222,10 @@
       "h": 57
     },
     "CAR01": {
-      "x": 907,
-      "y": 743,
+      "x": 288,
+      "y": 919,
       "w": 80,
       "h": 56
-    },
-    "PLAYER_UPHILL_STRAIGHT": {
-      "x": 120,
-      "y": 768,
-      "w": 80,
-      "h": 45
-    },
-    "PLAYER_UPHILL_LEFT": {
-      "x": 216,
-      "y": 770,
-      "w": 80,
-      "h": 45
-    },
-    "PLAYER_UPHILL_RIGHT": {
-      "x": 758,
-      "y": 780,
-      "w": 80,
-      "h": 45
-    },
-    "PLAYER_STRAIGHT": {
-      "x": 854,
-      "y": 815,
-      "w": 80,
-      "h": 41
-    },
-    "PLAYER_LEFT": {
-      "x": 120,
-      "y": 829,
-      "w": 80,
-      "h": 41
-    },
-    "PLAYER_RIGHT": {
-      "x": 216,
-      "y": 831,
-      "w": 80,
-      "h": 41
-    },
-    "PLAYER_DOWNHILL_STRAIGHT": {
-      "x": 16,
-      "y": 839,
-      "w": 80,
-      "h": 41
-    },
-    "PLAYER_DOWNHILL_LEFT": {
-      "x": 312,
-      "y": 841,
-      "w": 80,
-      "h": 41
-    },
-    "PLAYER_DOWNHILL_RIGHT": {
-      "x": 758,
-      "y": 841,
-      "w": 80,
-      "h": 41
     }
   }
 }
