@@ -93,19 +93,16 @@ def crop(rows, bounds, pad=6):
 def fix_truck_rear_window(rows):
     width = len(rows[0]) // 4
     height = len(rows)
-    top_y = round(height * 0.1)
+    top_y = round(height * 0.105)
     bottom_y = round(height * 0.32)
     for y in range(top_y, bottom_y):
         t = (y - top_y) / max(1, bottom_y - top_y)
-        left = round(width * (0.25 + (0.18 - 0.25) * t))
-        right = round(width * (0.75 + (0.82 - 0.75) * t))
-        shade = round(14 + 14 * (1 - t))
+        left = round(width * (0.235 + (0.21 - 0.235) * t))
+        right = round(width * (0.765 + (0.79 - 0.765) * t))
+        shade = round(8 + 10 * (1 - t))
         for x in range(left, right):
             offset = x * 4
-            r, g, b, a = rows[y][offset : offset + 4]
-            greenish = g > 70 and g > r * 1.25 and g > b * 1.25
-            if a == 0 or greenish:
-                rows[y][offset : offset + 4] = bytes((shade, shade + 24, shade + 20, 255))
+            rows[y][offset : offset + 4] = bytes((shade, shade + 10, shade + 12, 255))
     return rows
 
 

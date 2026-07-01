@@ -1,5 +1,5 @@
 local RacerTextures = {
-	Image = "rbxassetid://122356841133514",
+	Image = "rbxassetid://84250270717742",
 	SheetSize = Vector2.new(1024, 1024),
 	Sprites = {
 		TREE1 = { x = 16, y = 16, w = 234, h = 234 },
