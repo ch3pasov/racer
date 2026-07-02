@@ -331,24 +331,6 @@ RacerConfig.SpriteDefs = {
 		kind = "player",
 		color = Color3.fromRGB(255, 221, 78),
 	},
-	PLAYER_DOWNHILL_LEFT = {
-		width = 80,
-		height = 41,
-		kind = "player",
-		color = Color3.fromRGB(255, 221, 78),
-	},
-	PLAYER_DOWNHILL_STRAIGHT = {
-		width = 80,
-		height = 41,
-		kind = "player",
-		color = Color3.fromRGB(255, 221, 78),
-	},
-	PLAYER_DOWNHILL_RIGHT = {
-		width = 80,
-		height = 41,
-		kind = "player",
-		color = Color3.fromRGB(255, 221, 78),
-	},
 }
 
 for spriteName, spriteDef in RacerConfig.SpriteDefs do
@@ -360,24 +342,18 @@ function RacerConfig.playerSpriteDef(steer: number, updown: number)
 	if steer < 0 then
 		if updown > 0 then
 			spriteName = "PLAYER_UPHILL_LEFT"
-		elseif updown < 0 then
-			spriteName = "PLAYER_DOWNHILL_LEFT"
 		else
 			spriteName = "PLAYER_LEFT"
 		end
 	elseif steer > 0 then
 		if updown > 0 then
 			spriteName = "PLAYER_UPHILL_RIGHT"
-		elseif updown < 0 then
-			spriteName = "PLAYER_DOWNHILL_RIGHT"
 		else
 			spriteName = "PLAYER_RIGHT"
 		end
 	else
 		if updown > 0 then
 			spriteName = "PLAYER_UPHILL_STRAIGHT"
-		elseif updown < 0 then
-			spriteName = "PLAYER_DOWNHILL_STRAIGHT"
 		else
 			spriteName = "PLAYER_STRAIGHT"
 		end

@@ -207,9 +207,6 @@ expected_sprites = {
     "PLAYER_LEFT": (80, 41),
     "PLAYER_STRAIGHT": (80, 41),
     "PLAYER_RIGHT": (80, 41),
-    "PLAYER_DOWNHILL_LEFT": (80, 41),
-    "PLAYER_DOWNHILL_STRAIGHT": (80, 41),
-    "PLAYER_DOWNHILL_RIGHT": (80, 41),
 }
 
 for name, (width, height) in expected_sprites.items():
@@ -477,9 +474,6 @@ for token in [
 	"PLAYER_UPHILL_LEFT",
 	"PLAYER_UPHILL_RIGHT",
 	"PLAYER_UPHILL_STRAIGHT",
-	"PLAYER_DOWNHILL_LEFT",
-	"PLAYER_DOWNHILL_RIGHT",
-	"PLAYER_DOWNHILL_STRAIGHT",
 	"PLAYER_STRAIGHT",
 	"segmentIndex * RacerConfig.SegmentLength",
 	"return RacerMath.increase(trafficZ, -playerZ, trackLength)",
@@ -496,6 +490,9 @@ for token in [
 ]:
     if token not in CONFIG:
         fail(f"v4 sprite/traffic parity token missing: {token}")
+
+if "PLAYER_DOWNHILL" in CONFIG or "PLAYER_DOWNHILL" in TEXTURES:
+    fail("player sprites must match original six-frame uphill/flat set; no separate downhill sprites")
 
 if "DrawDistance = 300" not in CONFIG:
     fail("default drawDistance must match javascript-racer")

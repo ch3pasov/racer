@@ -1,5 +1,5 @@
 local RacerTextures = {
-	Image = "rbxassetid://97168588013133",
+	Image = "rbxassetid://107332518909521",
 	SheetSize = Vector2.new(1024, 1024),
 	Sprites = {
 		TREE1 = { x = 16, y = 16, w = 234, h = 234 },
@@ -25,20 +25,17 @@ local RacerTextures = {
 		BUSH2 = { x = 16, y = 653, w = 151, h = 99 },
 		CACTUS = { x = 330, y = 748, w = 153, h = 77 },
 		STUMP = { x = 499, y = 757, w = 127, h = 91 },
-		PLAYER_UPHILL_STRAIGHT = { x = 642, y = 757, w = 120, h = 68 },
-		PLAYER_UPHILL_LEFT = { x = 16, y = 768, w = 120, h = 68 },
+		PLAYER_UPHILL_LEFT = { x = 642, y = 757, w = 120, h = 68 },
+		PLAYER_UPHILL_STRAIGHT = { x = 16, y = 768, w = 120, h = 68 },
 		PLAYER_UPHILL_RIGHT = { x = 152, y = 770, w = 120, h = 68 },
 		TRUCK = { x = 778, y = 780, w = 100, h = 78 },
-		PLAYER_STRAIGHT = { x = 288, y = 841, w = 120, h = 62 },
-		PLAYER_LEFT = { x = 642, y = 841, w = 120, h = 62 },
+		PLAYER_LEFT = { x = 288, y = 841, w = 120, h = 62 },
+		PLAYER_STRAIGHT = { x = 642, y = 841, w = 120, h = 62 },
 		PLAYER_RIGHT = { x = 16, y = 852, w = 120, h = 62 },
-		PLAYER_DOWNHILL_STRAIGHT = { x = 152, y = 854, w = 120, h = 62 },
-		PLAYER_DOWNHILL_LEFT = { x = 424, y = 864, w = 120, h = 62 },
-		PLAYER_DOWNHILL_RIGHT = { x = 778, y = 874, w = 120, h = 62 },
 		CAR03 = { x = 894, y = 780, w = 88, h = 55 },
 		CAR02 = { x = 907, y = 595, w = 80, h = 59 },
 		CAR04 = { x = 907, y = 670, w = 80, h = 57 },
-		CAR01 = { x = 288, y = 919, w = 80, h = 56 },
+		CAR01 = { x = 894, y = 851, w = 80, h = 56 },
 	},
 }
 

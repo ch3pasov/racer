@@ -16,15 +16,12 @@ JSON_PATH = OUT_DIR / "racer-sprites-v3.json"
 TEXTURES_LUA = Path("src/racer/shared/RacerTextures.lua")
 
 SPRITE_DIMENSIONS = {
-    "PLAYER_STRAIGHT": (80, 41),
-    "PLAYER_LEFT": (80, 41),
-    "PLAYER_RIGHT": (80, 41),
-    "PLAYER_UPHILL_STRAIGHT": (80, 45),
     "PLAYER_UPHILL_LEFT": (80, 45),
+    "PLAYER_UPHILL_STRAIGHT": (80, 45),
     "PLAYER_UPHILL_RIGHT": (80, 45),
-    "PLAYER_DOWNHILL_STRAIGHT": (80, 41),
-    "PLAYER_DOWNHILL_LEFT": (80, 41),
-    "PLAYER_DOWNHILL_RIGHT": (80, 41),
+    "PLAYER_LEFT": (80, 41),
+    "PLAYER_STRAIGHT": (80, 41),
+    "PLAYER_RIGHT": (80, 41),
     "CAR01": (80, 56),
     "CAR02": (80, 59),
     "CAR03": (88, 55),
