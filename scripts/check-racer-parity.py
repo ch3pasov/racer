@@ -289,6 +289,19 @@ player_hashes = {
 if len(player_hashes) < 6:
     fail("player source PNGs must include distinct steering/hill variants")
 
+for name in template_player_sprites:
+    source_width, source_height, source_rows = read_png_rgba(texture_source_dir / f"{name}.png")
+    if source_width < 320 or source_height < 164:
+        fail(f"{name} source must retain high-resolution paint before atlas downsampling")
+    source_colors = {
+        tuple(row[offset : offset + 4])
+        for row in source_rows
+        for offset in range(0, len(row), 4)
+        if row[offset + 3] > 0
+    }
+    if len(source_colors) < 512:
+        fail(f"{name} source needs high-detail color gradients instead of nearest-neighbor pixels")
+
 if abs(PLAYER_WIDTH - 0.3) > 1e-9:
     fail("player collision width must be SPRITES.PLAYER_STRAIGHT.w * SPRITES.SCALE = 0.3")
 

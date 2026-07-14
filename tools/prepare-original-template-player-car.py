@@ -6,15 +6,16 @@ from generate_racer_textures_support import read_png_rgba, write_png
 
 
 SOURCE_DIR = Path("assets/racer/textures/v3-sources")
-SCALE = 3
+PAINT_SHEET = Path("assets/racer/textures/v3-sheets/player-car-v4-original-template-generated.png")
+SCALE = 4
 
 SPRITES = {
-    "PLAYER_LEFT": ("original-player_left.png", 80, 41, 2),
-    "PLAYER_STRAIGHT": ("original-player_straight.png", 80, 41, 0),
-    "PLAYER_RIGHT": ("original-player_right.png", 80, 41, -2),
-    "PLAYER_UPHILL_LEFT": ("original-player_uphill_left.png", 80, 45, 1),
-    "PLAYER_UPHILL_STRAIGHT": ("original-player_uphill_straight.png", 80, 45, 0),
-    "PLAYER_UPHILL_RIGHT": ("original-player_uphill_right.png", 80, 45, -2),
+    "PLAYER_LEFT": ("original-player_left.png", 80, 41, 2, 0, 0),
+    "PLAYER_STRAIGHT": ("original-player_straight.png", 80, 41, 0, 1, 0),
+    "PLAYER_RIGHT": ("original-player_right.png", 80, 41, -2, 2, 0),
+    "PLAYER_UPHILL_LEFT": ("original-player_uphill_left.png", 80, 45, 1, 0, 1),
+    "PLAYER_UPHILL_STRAIGHT": ("original-player_uphill_straight.png", 80, 45, 0, 1, 1),
+    "PLAYER_UPHILL_RIGHT": ("original-player_uphill_right.png", 80, 45, -2, 2, 1),
 }
 
 BODY_PALETTE = {
@@ -141,20 +142,88 @@ def empty_cockpit(rows, shift, uphill):
     set_pixel(rows, 43 + shift, mirror_y, BLACK)
 
 
-def upscale_nearest(rows, width, height):
-    output = [bytearray(width * SCALE * 4) for _ in range(height * SCALE)]
-    for y in range(height):
-        for x in range(width):
-            color = rows[y][x * 4 : x * 4 + 4]
-            for yy in range(y * SCALE, (y + 1) * SCALE):
-                for xx in range(x * SCALE, (x + 1) * SCALE):
-                    output[yy][xx * 4 : xx * 4 + 4] = color
+def sample_bilinear(rows, width, height, x, y):
+    x = max(0, min(width - 1, x))
+    y = max(0, min(height - 1, y))
+    x0 = int(x)
+    y0 = int(y)
+    x1 = min(width - 1, x0 + 1)
+    y1 = min(height - 1, y0 + 1)
+    tx = x - x0
+    ty = y - y0
+    result = []
+    for channel in range(4):
+        c00 = rows[y0][x0 * 4 + channel]
+        c10 = rows[y0][x1 * 4 + channel]
+        c01 = rows[y1][x0 * 4 + channel]
+        c11 = rows[y1][x1 * 4 + channel]
+        value = (c00 * (1 - tx) + c10 * tx) * (1 - ty) + (c01 * (1 - tx) + c11 * tx) * ty
+        result.append(round(value))
+    return result
+
+
+def extract_paint_cell(sheet_rows, sheet_width, sheet_height, column, row_index):
+    x0 = round(column * sheet_width / 3)
+    x1 = round((column + 1) * sheet_width / 3)
+    y0 = round(row_index * sheet_height / 2)
+    y1 = round((row_index + 1) * sheet_height / 2)
+    cell_width = x1 - x0
+    cell_height = y1 - y0
+    points = []
+    for local_y in range(cell_height):
+        for local_x in range(cell_width):
+            offset = (x0 + local_x) * 4
+            r, g, b, _ = sheet_rows[y0 + local_y][offset : offset + 4]
+            baseline = local_y > cell_height - 30 and r > 90 and r > g * 1.5 and r > b * 1.3
+            foreground = r > 48 or g > 58 or b > 72 or (r < 16 and g < 16 and b < 20)
+            if foreground and not baseline:
+                points.append((local_x, local_y))
+    if not points:
+        raise RuntimeError(f"generated paint cell {column},{row_index} has no car pixels")
+    min_x = min(x for x, _ in points)
+    max_x = max(x for x, _ in points)
+    min_y = min(y for _, y in points)
+    max_y = max(y for _, y in points)
+    cropped = [
+        bytearray(sheet_rows[y0 + y][(x0 + min_x) * 4 : (x0 + max_x + 1) * 4])
+        for y in range(min_y, max_y + 1)
+    ]
+    return max_x - min_x + 1, max_y - min_y + 1, cropped
+
+
+def paint_template(template_rows, width, height, paint_rows, paint_width, paint_height):
+    output_width = width * SCALE
+    output_height = height * SCALE
+    output = [bytearray(output_width * 4) for _ in range(output_height)]
+    for y in range(output_height):
+        template_y = (y + 0.5) / SCALE - 0.5
+        paint_y = (y + 0.5) * paint_height / output_height - 0.5
+        for x in range(output_width):
+            template_x = (x + 0.5) / SCALE - 0.5
+            paint_x = (x + 0.5) * paint_width / output_width - 0.5
+            fallback = sample_bilinear(template_rows, width, height, template_x, template_y)
+            alpha = fallback[3]
+            if alpha == 0:
+                continue
+            painted = sample_bilinear(paint_rows, paint_width, paint_height, paint_x, paint_y)
+            r, g, b = painted[:3]
+            looks_like_sheet_background = b > r * 1.15 and b > g * 1.08 and r < 70
+            lower_edge = y > output_height * 0.88
+            wheel_corner = x < output_width * 0.18 or x > output_width * 0.82
+            looks_like_baseline = y > output_height * 0.92 and r > 90 and r > g * 1.4 and r > b * 1.2
+            use_fallback = (
+                looks_like_sheet_background or looks_like_baseline or (lower_edge and wheel_corner)
+            )
+            color = fallback[:3] if use_fallback else painted[:3]
+            offset = x * 4
+            output[y][offset : offset + 4] = bytes((*color, alpha))
     return output
 
 
-def prepare(reference_dir, output_dir):
+def prepare(reference_dir, output_dir, paint_sheet):
+    sheet_width, sheet_height, sheet_rows = read_png_rgba(paint_sheet)
     output_dir.mkdir(parents=True, exist_ok=True)
-    for name, (filename, expected_width, expected_height, shift) in SPRITES.items():
+    for name, (filename, expected_width, expected_height, shift, column, row_index) in SPRITES.items():
         source_path = reference_dir / filename
         width, height, rows = read_png_rgba(source_path)
         if (width, height) != (expected_width, expected_height):
@@ -163,18 +232,28 @@ def prepare(reference_dir, output_dir):
         uphill = name.startswith("PLAYER_UPHILL_")
         empty_cockpit(rows, shift, uphill)
         draw_blank_plate(rows, uphill)
-        scaled = upscale_nearest(rows, width, height)
+        paint_width, paint_height, paint_rows = extract_paint_cell(
+            sheet_rows, sheet_width, sheet_height, column, row_index
+        )
+        scaled = paint_template(rows, width, height, paint_rows, paint_width, paint_height)
         output_path = output_dir / f"{name}.png"
         write_png(output_path, width * SCALE, height * SCALE, scaled)
         print(output_path)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Repaint the six player sprites on the original Racer pose templates.")
-    parser.add_argument("reference_dir", type=Path, help="Directory containing the six original-player_*.png references")
+    parser = argparse.ArgumentParser(
+        description="Repaint the six player sprites on the original Racer pose templates."
+    )
+    parser.add_argument(
+        "reference_dir",
+        type=Path,
+        help="Directory containing the six original-player_*.png references",
+    )
     parser.add_argument("--output-dir", type=Path, default=SOURCE_DIR)
+    parser.add_argument("--paint-sheet", type=Path, default=PAINT_SHEET)
     args = parser.parse_args()
-    prepare(args.reference_dir, args.output_dir)
+    prepare(args.reference_dir, args.output_dir, args.paint_sheet)
 
 
 if __name__ == "__main__":

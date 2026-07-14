@@ -23,8 +23,9 @@ Codex session data only; it does not call an image API or require an API key.
 
 The six production player-car sprites are repainted on the original Racer pose
 templates so their steering silhouettes and uphill scale stay compatible with
-the renderer. Keep the six reference PNGs outside the repository and rebuild
-the transparent sources with:
+the renderer. Their high-detail paint comes from the committed generated sheet,
+while the original masks control geometry and transparency. Keep the six
+reference PNGs outside the repository and rebuild the transparent sources with:
 
 ```sh
 python3 tools/prepare-original-template-player-car.py /path/to/reference-directory
