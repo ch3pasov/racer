@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import math
 import re
@@ -411,6 +412,9 @@ def read_source_sprite(name):
 
 
 def main():
+    previous_meta = {}
+    if JSON_PATH.exists():
+        previous_meta = json.loads(JSON_PATH.read_text())
     atlas_rows = blank(WIDTH, HEIGHT)
     sprites = pack_sprites(SPRITE_DIMENSIONS.keys())
     for name in sprites:
@@ -418,7 +422,16 @@ def main():
         paste(atlas_rows, sprites[name], source_rows)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     write_png(PNG_PATH, WIDTH, HEIGHT, atlas_rows)
-    JSON_PATH.write_text(json.dumps({"image": PNG_PATH.name, "size": [WIDTH, HEIGHT], "sprites": sprites}, indent=2) + "\n")
+    digest = hashlib.sha256(PNG_PATH.read_bytes()).hexdigest()
+    metadata = {
+        "image": PNG_PATH.name,
+        "sha256": digest,
+        "size": [WIDTH, HEIGHT],
+        "sprites": sprites,
+    }
+    if previous_meta.get("sha256") == digest and previous_meta.get("robloxAssetId"):
+        metadata["robloxAssetId"] = previous_meta["robloxAssetId"]
+    JSON_PATH.write_text(json.dumps(metadata, indent=2) + "\n")
     sync_lua(sprites)
     print(PNG_PATH)
 

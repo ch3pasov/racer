@@ -1,5 +1,6 @@
 {
   "image": "racer-sprites-v3.png",
+  "sha256": "62ce149c655db3b5a0d0c4eafabdedf07746b3ab66782f3a965bfbf645e30deb",
   "size": [
     1024,
     1024
@@ -209,5 +210,6 @@
       "w": 80,
       "h": 56
     }
-  }
+  },
+  "robloxAssetId": "140180977402353"
 }

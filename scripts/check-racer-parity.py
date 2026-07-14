@@ -116,6 +116,11 @@ if not texture_meta.exists():
 texture_meta_data = json.loads(texture_meta.read_text())
 if texture_meta_data.get("image") != "racer-sprites-v3.png":
     fail("local racer texture metadata must describe the v3 atlas")
+if texture_meta_data.get("robloxAssetId") != texture_asset.group(1):
+    fail("RacerTextures.Image must match the uploaded asset recorded in texture metadata")
+texture_digest = hashlib.sha256(texture_png.read_bytes()).hexdigest()
+if texture_meta_data.get("sha256") != texture_digest:
+    fail("local racer texture atlas changed and must be uploaded before publishing")
 if texture_meta_data.get("size") != [1024, 1024]:
     fail("local racer texture metadata must describe the 1024x1024 v3 atlas")
 texture_width, texture_height, texture_rows = read_png_rgba(texture_png)
