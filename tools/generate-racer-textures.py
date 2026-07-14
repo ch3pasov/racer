@@ -5,6 +5,7 @@ import math
 import re
 import struct
 import zlib
+from collections import deque
 from pathlib import Path
 
 
@@ -15,6 +16,15 @@ SOURCE_DIR = OUT_DIR / "v3-sources"
 PNG_PATH = OUT_DIR / "racer-sprites-v3.png"
 JSON_PATH = OUT_DIR / "racer-sprites-v3.json"
 TEXTURES_LUA = Path("src/racer/shared/RacerTextures.lua")
+
+PLAYER_SOURCE_DIMENSIONS = {
+    "PLAYER_LEFT": (320, 164),
+    "PLAYER_STRAIGHT": (320, 164),
+    "PLAYER_RIGHT": (320, 164),
+    "PLAYER_UPHILL_LEFT": (320, 180),
+    "PLAYER_UPHILL_STRAIGHT": (320, 180),
+    "PLAYER_UPHILL_RIGHT": (320, 180),
+}
 
 SPRITE_DIMENSIONS = {
     "PLAYER_UPHILL_LEFT": (80, 45),
@@ -77,7 +87,7 @@ def png_chunk(kind, payload):
     )
 
 
-def read_png_rgba(path):
+def read_png_rgba(path, require_rgba=False):
     data = path.read_bytes()
     if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise RuntimeError(f"{path} is not a PNG")
@@ -105,6 +115,8 @@ def read_png_rgba(path):
         raise RuntimeError(f"{path} has no PNG header")
     if bit_depth != 8 or color_type not in {2, 3, 6}:
         raise RuntimeError(f"{path} must be 8-bit RGB, indexed, or RGBA PNG")
+    if require_rgba and color_type != 6:
+        raise RuntimeError(f"{path} must be an 8-bit RGBA PNG")
 
     channels = {2: 3, 3: 1, 6: 4}[color_type]
     stride = width * channels
@@ -274,6 +286,51 @@ def fit_to_rect(rows, target_w, target_h):
     return out
 
 
+def resize_premultiplied_area(rows, target_w, target_h):
+    """Resize one full RGBA canvas with area filtering in premultiplied alpha."""
+    source_h = len(rows)
+    source_w = len(rows[0]) // 4
+    out = blank(target_w, target_h)
+    scale_x = source_w / target_w
+    scale_y = source_h / target_h
+    pixel_area = scale_x * scale_y
+    for target_y in range(target_h):
+        source_y1 = target_y * scale_y
+        source_y2 = (target_y + 1) * scale_y
+        first_y = math.floor(source_y1)
+        last_y = min(source_h - 1, math.ceil(source_y2) - 1)
+        for target_x in range(target_w):
+            source_x1 = target_x * scale_x
+            source_x2 = (target_x + 1) * scale_x
+            first_x = math.floor(source_x1)
+            last_x = min(source_w - 1, math.ceil(source_x2) - 1)
+            alpha_sum = 0.0
+            premultiplied = [0.0, 0.0, 0.0]
+            for source_y in range(first_y, last_y + 1):
+                overlap_y = min(source_y2, source_y + 1) - max(source_y1, source_y)
+                if overlap_y <= 0:
+                    continue
+                for source_x in range(first_x, last_x + 1):
+                    overlap_x = min(source_x2, source_x + 1) - max(source_x1, source_x)
+                    weight = overlap_x * overlap_y
+                    if weight <= 0:
+                        continue
+                    offset = source_x * 4
+                    alpha = rows[source_y][offset + 3]
+                    if alpha == 0:
+                        continue
+                    weighted_alpha = alpha * weight
+                    alpha_sum += weighted_alpha
+                    for channel in range(3):
+                        premultiplied[channel] += rows[source_y][offset + channel] * weighted_alpha
+            alpha = round(alpha_sum / pixel_area)
+            if alpha <= 0 or alpha_sum <= 0:
+                continue
+            color = [round(value / alpha_sum) for value in premultiplied]
+            put(out, target_w, target_x, target_y, [*color, min(255, alpha)])
+    return out
+
+
 def pack_sprites(names, padding=16):
     free_rects = [(padding, padding, WIDTH - padding * 2, HEIGHT - padding * 2)]
     packed = {}
@@ -347,6 +404,243 @@ def alpha_points(rows):
     return points
 
 
+def alpha_mask(rows, threshold=16):
+    width = len(rows[0]) // 4
+    return [
+        [row[x * 4 + 3] >= threshold for x in range(width)]
+        for row in rows
+    ]
+
+
+def connected_component_sizes(mask):
+    height = len(mask)
+    width = len(mask[0])
+    visited = [[False] * width for _ in range(height)]
+    sizes = []
+    for start_y in range(height):
+        for start_x in range(width):
+            if not mask[start_y][start_x] or visited[start_y][start_x]:
+                continue
+            queue = deque([(start_x, start_y)])
+            visited[start_y][start_x] = True
+            size = 0
+            while queue:
+                x, y = queue.popleft()
+                size += 1
+                for dx, dy in ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)):
+                    next_x = x + dx
+                    next_y = y + dy
+                    if not (0 <= next_x < width and 0 <= next_y < height):
+                        continue
+                    if visited[next_y][next_x] or not mask[next_y][next_x]:
+                        continue
+                    visited[next_y][next_x] = True
+                    queue.append((next_x, next_y))
+            sizes.append(size)
+    return sorted(sizes, reverse=True)
+
+
+def enclosed_transparent_pixels(mask):
+    height = len(mask)
+    width = len(mask[0])
+    exterior = [[False] * width for _ in range(height)]
+    queue = deque()
+    for x in range(width):
+        for y in (0, height - 1):
+            if not mask[y][x] and not exterior[y][x]:
+                exterior[y][x] = True
+                queue.append((x, y))
+    for y in range(height):
+        for x in (0, width - 1):
+            if not mask[y][x] and not exterior[y][x]:
+                exterior[y][x] = True
+                queue.append((x, y))
+    while queue:
+        x, y = queue.popleft()
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            next_x = x + dx
+            next_y = y + dy
+            if not (0 <= next_x < width and 0 <= next_y < height):
+                continue
+            if mask[next_y][next_x] or exterior[next_y][next_x]:
+                continue
+            exterior[next_y][next_x] = True
+            queue.append((next_x, next_y))
+    return sum(
+        1
+        for y in range(height)
+        for x in range(width)
+        if not mask[y][x] and not exterior[y][x]
+    )
+
+
+def normalized_mask(rows, target_w=80, target_h=48):
+    bounds = alpha_bounds(rows)
+    if not bounds:
+        return set()
+    min_x, min_y, max_x, max_y = bounds
+    source_w = max_x - min_x + 1
+    source_h = max_y - min_y + 1
+    mask = alpha_mask(rows, threshold=128)
+    points = set()
+    for y in range(target_h):
+        source_y = min(max_y, min_y + math.floor((y + 0.5) * source_h / target_h))
+        for x in range(target_w):
+            source_x = min(max_x, min_x + math.floor((x + 0.5) * source_w / target_w))
+            if mask[source_y][source_x]:
+                points.add((x, y))
+    return points
+
+
+def mask_iou(left, right):
+    union = left | right
+    return len(left & right) / len(union) if union else 1.0
+
+
+def normalized_color_difference(left, right, target_w=80, target_h=48):
+    def samples(rows):
+        bounds = alpha_bounds(rows)
+        min_x, min_y, max_x, max_y = bounds
+        source_w = max_x - min_x + 1
+        source_h = max_y - min_y + 1
+        values = []
+        for y in range(target_h):
+            source_y = min(max_y, min_y + math.floor((y + 0.5) * source_h / target_h))
+            for x in range(target_w):
+                source_x = min(max_x, min_x + math.floor((x + 0.5) * source_w / target_w))
+                values.append(tuple(pixel(rows, source_x, source_y)))
+        return values
+
+    left_samples = samples(left)
+    right_samples = samples(right)
+    channel_difference = sum(
+        abs(left_pixel[channel] - right_pixel[channel])
+        for left_pixel, right_pixel in zip(left_samples, right_samples)
+        for channel in range(3)
+    )
+    return channel_difference / (target_w * target_h * 3 * 255)
+
+
+def top_middle_centroid_delta(rows):
+    bounds = alpha_bounds(rows)
+    if not bounds:
+        return 0.0
+    min_x, min_y, max_x, max_y = bounds
+    sprite_height = max_y - min_y + 1
+    top_end = min_y + sprite_height * 0.25
+    middle_end = min_y + sprite_height * 0.75
+    top = []
+    middle = []
+    for x, y, alpha in alpha_points(rows):
+        if y < top_end:
+            top.append((x, alpha))
+        elif y < middle_end:
+            middle.append((x, alpha))
+
+    def centroid(points):
+        return sum(x * alpha for x, alpha in points) / sum(alpha for _, alpha in points)
+
+    return centroid(top) - centroid(middle)
+
+
+def validate_player_source(name, width, height, rows):
+    expected = PLAYER_SOURCE_DIMENSIONS[name]
+    if (width, height) != expected:
+        raise RuntimeError(f"{name} source must be {expected[0]}x{expected[1]}, got {width}x{height}")
+    mask = alpha_mask(rows)
+    components = connected_component_sizes(mask)
+    if len(components) != 1:
+        raise RuntimeError(f"{name} must have one connected silhouette, got components {components[:8]}")
+    holes = enclosed_transparent_pixels(mask)
+    if holes:
+        raise RuntimeError(f"{name} contains {holes} enclosed transparent pixels")
+    bottom_contact = sum(1 for value in mask[-1] if value)
+    if bottom_contact < 4:
+        raise RuntimeError(f"{name} must have deliberate bottom-edge contact, got {bottom_contact} pixels")
+    if any(mask[0]) or any(row[0] or row[-1] for row in mask):
+        raise RuntimeError(f"{name} may touch only the bottom canvas edge")
+    hidden_rgb = 0
+    partial_alpha = 0
+    visible = 0
+    for row in rows:
+        for x in range(width):
+            offset = x * 4
+            red, green, blue, alpha = row[offset : offset + 4]
+            if alpha == 0 and (red or green or blue):
+                hidden_rgb += 1
+            if alpha > 0:
+                visible += 1
+                if alpha < 255:
+                    partial_alpha += 1
+    if hidden_rgb:
+        raise RuntimeError(f"{name} contains RGB paint in {hidden_rgb} transparent pixels")
+    if visible and partial_alpha / visible > 0.12:
+        raise RuntimeError(f"{name} has excessive partial alpha: {partial_alpha / visible:.1%}")
+
+
+def validate_player_atlas_frame(name, rows):
+    for threshold in (1, 16, 128, 255):
+        mask = alpha_mask(rows, threshold=threshold)
+        components = connected_component_sizes(mask)
+        if len(components) != 1:
+            raise RuntimeError(
+                f"{name} downsampled atlas frame must have one connected silhouette "
+                f"at alpha >= {threshold}, got components {components[:8]}"
+            )
+        holes = enclosed_transparent_pixels(mask)
+        if holes:
+            raise RuntimeError(
+                f"{name} downsampled atlas frame contains {holes} enclosed transparent "
+                f"pixels at alpha >= {threshold}"
+            )
+        bottom_contact = sum(1 for value in mask[-1] if value)
+        if bottom_contact == 0:
+            raise RuntimeError(
+                f"{name} downsampled atlas frame must touch its bottom edge "
+                f"at alpha >= {threshold}"
+            )
+
+
+def validate_player_pose_set(sources):
+    for prefix in ("PLAYER", "PLAYER_UPHILL"):
+        left = sources[f"{prefix}_LEFT"]
+        straight = sources[f"{prefix}_STRAIGHT"]
+        right = sources[f"{prefix}_RIGHT"]
+        normalized = [normalized_mask(rows) for rows in (left, straight, right)]
+        similarities = [
+            mask_iou(normalized[0], normalized[1]),
+            mask_iou(normalized[1], normalized[2]),
+            mask_iou(normalized[0], normalized[2]),
+        ]
+        if max(similarities) > 0.92:
+            raise RuntimeError(f"{prefix} steering poses are too similar after alignment: {similarities}")
+        deltas = [top_middle_centroid_delta(rows) for rows in (left, straight, right)]
+        if not (deltas[0] < -8 and abs(deltas[1]) < 3 and deltas[2] > 8):
+            raise RuntimeError(f"{prefix} steering perspective is not strong enough: {deltas}")
+
+    for direction in ("LEFT", "STRAIGHT", "RIGHT"):
+        normal = sources[f"PLAYER_{direction}"]
+        uphill = sources[f"PLAYER_UPHILL_{direction}"]
+        normal_bounds = alpha_bounds(normal)
+        uphill_bounds = alpha_bounds(uphill)
+        normal_w = normal_bounds[2] - normal_bounds[0] + 1
+        normal_h = normal_bounds[3] - normal_bounds[1] + 1
+        uphill_w = uphill_bounds[2] - uphill_bounds[0] + 1
+        uphill_h = uphill_bounds[3] - uphill_bounds[1] + 1
+        if not (0.9 <= uphill_w / normal_w <= 1.1 and 0.9 <= uphill_h / normal_h <= 1.22):
+            raise RuntimeError(
+                f"{direction} uphill pose changed apparent size too much: "
+                f"normal={normal_w}x{normal_h} uphill={uphill_w}x{uphill_h}"
+            )
+        similarity = mask_iou(normalized_mask(normal), normalized_mask(uphill))
+        color_difference = normalized_color_difference(normal, uphill)
+        if similarity > 0.985 or color_difference < 0.08:
+            raise RuntimeError(
+                f"{direction} uphill pose lacks a distinct camera pitch: "
+                f"IoU={similarity:.3f} colorDifference={color_difference:.3f}"
+            )
+
+
 def validate_sprite(name, rows):
     width = len(rows[0]) // 4
     height = len(rows)
@@ -359,20 +653,6 @@ def validate_sprite(name, rows):
     coverage = len(points) / (width * height)
     if coverage < 0.012:
         raise RuntimeError(f"{name} visible coverage is too low: {coverage:.3f}")
-
-
-def clean_player_chroma_edges(rows):
-    for row in rows:
-        for x in range(len(row) // 4):
-            offset = x * 4
-            r, g, b, a = row[offset : offset + 4]
-            if a == 0:
-                continue
-            if g > 70 and g > r * 1.18 and g > b * 1.18:
-                row[offset : offset + 4] = b"\x00\x00\x00\x00"
-            elif g > r + 28 and g > b + 28:
-                row[offset + 1] = max(r, b)
-    return rows
 
 
 def validate_palm(rows):
@@ -397,14 +677,16 @@ def read_source_sprite(name):
     path = SOURCE_DIR / f"{name}.png"
     if not path.exists():
         raise RuntimeError(f"missing source sprite {path}")
-    _, _, rows = read_png_rgba(path)
-    key = (0, 255, 0) if name.startswith(("PLAYER_", "CAR", "TRUCK", "SEMI", "BILLBOARD")) else (255, 0, 255)
+    width, height, rows = read_png_rgba(path, require_rgba=name.startswith("PLAYER_"))
+    if name.startswith("PLAYER_"):
+        validate_player_source(name, width, height, rows)
+        fitted = resize_premultiplied_area(rows, *texture_dimensions(name))
+        validate_sprite(name, fitted)
+        validate_player_atlas_frame(name, fitted)
+        return fitted
+    key = (0, 255, 0) if name.startswith(("CAR", "TRUCK", "SEMI", "BILLBOARD")) else (255, 0, 255)
     rows = remove_chroma(rows, key=key)
-    if name.startswith("PLAYER_"):
-        rows = clean_player_chroma_edges(rows)
     fitted = fit_to_rect(rows, *texture_dimensions(name))
-    if name.startswith("PLAYER_"):
-        fitted = clean_player_chroma_edges(fitted)
     validate_sprite(name, fitted)
     if name == "PALM_TREE":
         validate_palm(fitted)
@@ -412,6 +694,19 @@ def read_source_sprite(name):
 
 
 def main():
+    actual_player_sources = {path.stem for path in SOURCE_DIR.glob("PLAYER*.png")}
+    expected_player_sources = set(PLAYER_SOURCE_DIMENSIONS)
+    if actual_player_sources != expected_player_sources:
+        missing = sorted(expected_player_sources - actual_player_sources)
+        extra = sorted(actual_player_sources - expected_player_sources)
+        raise RuntimeError(f"player source inventory mismatch: missing={missing} extra={extra}")
+    player_sources = {}
+    for name, expected in PLAYER_SOURCE_DIMENSIONS.items():
+        width, height, rows = read_png_rgba(SOURCE_DIR / f"{name}.png", require_rgba=True)
+        validate_player_source(name, width, height, rows)
+        player_sources[name] = rows
+    validate_player_pose_set(player_sources)
+
     previous_meta = {}
     if JSON_PATH.exists():
         previous_meta = json.loads(JSON_PATH.read_text())

@@ -378,18 +378,45 @@ player_hashes = {
 if len(player_hashes) < 6:
     fail("player source PNGs must include distinct steering/hill variants")
 
+expected_player_palette = {
+    (16, 17, 22, 255),
+    (20, 21, 26, 255),
+    (31, 36, 43, 255),
+    (53, 55, 61, 255),
+    (57, 60, 64, 255),
+    (63, 69, 76, 255),
+    (137, 88, 0, 255),
+    (170, 176, 178, 255),
+    (196, 132, 0, 255),
+    (224, 45, 29, 255),
+    (236, 239, 232, 255),
+    (255, 112, 36, 255),
+    (255, 210, 42, 255),
+    (255, 224, 133, 255),
+    (255, 235, 91, 255),
+    (255, 250, 190, 255),
+}
+
 for name in template_player_sprites:
     source_width, source_height, source_rows = read_png_rgba(texture_source_dir / f"{name}.png")
     if source_width < 320 or source_height < 164:
         fail(f"{name} source must retain high-resolution paint before atlas downsampling")
-    source_colors = {
+    source_pixels = {
         tuple(row[offset : offset + 4])
         for row in source_rows
         for offset in range(0, len(row), 4)
-        if row[offset + 3] > 0
     }
-    if len(source_colors) < 512:
-        fail(f"{name} source needs high-detail color gradients instead of nearest-neighbor pixels")
+    transparent_pixels = {pixel for pixel in source_pixels if pixel[3] == 0}
+    if transparent_pixels != {(0, 0, 0, 0)}:
+        fail(f"{name} source transparency must not contain hidden RGB")
+    source_palette = {pixel for pixel in source_pixels if pixel[3] > 0}
+    if source_palette != expected_player_palette:
+        missing = sorted(expected_player_palette - source_palette)
+        unexpected = sorted(source_palette - expected_player_palette)
+        fail(
+            f"{name} source must use the deliberate 16-color palette "
+            f"(missing={missing}, unexpected={unexpected})"
+        )
 
 if abs(PLAYER_WIDTH - 0.3) > 1e-9:
     fail("player collision width must be SPRITES.PLAYER_STRAIGHT.w * SPRITES.SCALE = 0.3")
