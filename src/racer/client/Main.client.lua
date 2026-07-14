@@ -3211,6 +3211,8 @@ local worldRenderAccumulator = WORLD_RENDER_INTERVAL
 local settingsLabelAccumulator = SETTINGS_LABEL_INTERVAL
 local hudCleanupAccumulator = 0
 local latestPerfSummary = "waiting for perf sample"
+local perfWindowFocused = true
+local perfSkipNextFrame = false
 local perfStats = {
 	elapsed = 0,
 	frames = 0,
@@ -3238,6 +3240,20 @@ local function resetPerfStats()
 	perfStats.fullRenderTime = 0
 	perfStats.fullRenderCount = 0
 end
+
+UserInputService.WindowFocusReleased:Connect(function()
+	perfWindowFocused = false
+	perfSkipNextFrame = true
+	latestPerfSummary = "paused while window is unfocused"
+	resetPerfStats()
+end)
+
+UserInputService.WindowFocused:Connect(function()
+	perfWindowFocused = true
+	perfSkipNextFrame = true
+	latestPerfSummary = "waiting for focused perf sample"
+	resetPerfStats()
+end)
 
 local function averageMs(totalSeconds: number, count: number): number
 	if count <= 0 then
@@ -3336,8 +3352,10 @@ local function flushPerfStats(state)
 	)
 	latestPerfSummary = summary
 	refreshPerfLabel(state)
-	warn(`[RacerPerf] {summary}`)
-	perfLogEvent:FireServer(summary)
+	if perfStats.stutters > 0 then
+		warn(`[RacerPerf] {summary}`)
+		perfLogEvent:FireServer(summary)
+	end
 	resetPerfStats()
 end
 
@@ -3355,14 +3373,20 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		removeForeignRacerHuds()
 	end
 
-	perfStats.elapsed += deltaTime
-	perfStats.frames += 1
-	perfStats.maxFrame = math.max(perfStats.maxFrame, deltaTime)
-	if deltaTime >= STUTTER_FRAME_TIME then
-		perfStats.stutters += 1
+	local collectPerf = perfWindowFocused and not perfSkipNextFrame
+	if perfWindowFocused then
+		perfSkipNextFrame = false
 	end
-	if deltaTime >= SEVERE_STUTTER_FRAME_TIME then
-		perfStats.severeStutters += 1
+	if collectPerf then
+		perfStats.elapsed += deltaTime
+		perfStats.frames += 1
+		perfStats.maxFrame = math.max(perfStats.maxFrame, deltaTime)
+		if deltaTime >= STUTTER_FRAME_TIME then
+			perfStats.stutters += 1
+		end
+		if deltaTime >= SEVERE_STUTTER_FRAME_TIME then
+			perfStats.severeStutters += 1
+		end
 	end
 
 	worldRenderAccumulator += deltaTime
@@ -3397,7 +3421,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 				renderedWorldScreens += 1
 			end
 		end
-		if renderedWorldScreens > 0 then
+		if collectPerf and renderedWorldScreens > 0 then
 			perfStats.worldRenderTime += os.clock() - worldRenderStart
 			perfStats.worldRenderCount += renderedWorldScreens
 		end
@@ -3419,8 +3443,10 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		local renderState = updatePredictedState(state, deltaTime)
 		render(fullRenderer, renderState)
 		updateActiveStatus(renderState)
-		perfStats.fullRenderTime += os.clock() - fullRenderStart
-		perfStats.fullRenderCount += 1
+		if collectPerf then
+			perfStats.fullRenderTime += os.clock() - fullRenderStart
+			perfStats.fullRenderCount += 1
+		end
 		perfStats.lastFullObjects = fullRenderer.lastObjectCount or 0
 		perfStats.lastFullRows = fullRenderer.lastRowCount or 0
 		settingsLabelAccumulator += deltaTime
@@ -3443,7 +3469,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		end
 	end
 
-	if perfStats.elapsed >= PERF_LOG_INTERVAL then
+	if perfWindowFocused and perfStats.elapsed >= PERF_LOG_INTERVAL then
 		flushPerfStats(state)
 	end
 end)

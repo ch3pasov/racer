@@ -1757,6 +1757,19 @@ for token in [
         fail(f"F6 active racer diagnostics must expose input/local/server HUD state: {token}")
 
 for token in [
+    "local perfWindowFocused = true",
+    "local perfSkipNextFrame = false",
+    "UserInputService.WindowFocusReleased:Connect(function()",
+    "UserInputService.WindowFocused:Connect(function()",
+    'latestPerfSummary = "paused while window is unfocused"',
+    "local collectPerf = perfWindowFocused and not perfSkipNextFrame",
+    "if perfStats.stutters > 0 then\n\t\twarn(`[RacerPerf] {summary}`)\n\t\tperfLogEvent:FireServer(summary)\n\tend",
+    "if perfWindowFocused and perfStats.elapsed >= PERF_LOG_INTERVAL then",
+]:
+    if token not in CLIENT:
+        fail(f"perf telemetry must ignore unfocused windows and report only focused stutters: {token}")
+
+for token in [
     'local LogService = game:GetService("LogService")',
     'RacerClientLog',
     'RacerClientLogs',
