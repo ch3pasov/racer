@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         description="Read live Roblox game server logs through Open Cloud.",
     )
     parser.add_argument("--universe-id", default=env_value("ROBLOX_UNIVERSE_ID"))
-    parser.add_argument("--place-id", default=env_value("ROBLOX_PLACE_ID", "ROBLOX_RACER_PLACE_ID"))
+    parser.add_argument("--place-id", default=env_value("ROBLOX_RACER_PLACE_ID"))
     parser.add_argument("--version-number", default=env_value("ROBLOX_VERSION_NUMBER"))
     parser.add_argument("--api-key-env", default="ROBLOX_API_KEY")
     parser.add_argument("--max-page-size", type=int, default=DEFAULT_MAX_PAGE_SIZE)
@@ -220,7 +220,7 @@ def main() -> int:
     args = parse_args()
     api_key = require_config(os.environ.get(args.api_key_env), args.api_key_env)
     universe_id = require_config(args.universe_id, "ROBLOX_UNIVERSE_ID")
-    place_id = require_config(args.place_id, "ROBLOX_PLACE_ID or ROBLOX_RACER_PLACE_ID")
+    place_id = require_config(args.place_id, "ROBLOX_RACER_PLACE_ID")
     version_number = require_config(args.version_number, "ROBLOX_VERSION_NUMBER")
     min_severity = 2 if args.warnings_and_errors else args.min_severity
 

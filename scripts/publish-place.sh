@@ -3,15 +3,21 @@ set -euo pipefail
 
 : "${ROBLOX_API_KEY:?ROBLOX_API_KEY is required}"
 : "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"
+: "${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}"
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+cd "${ROOT_DIR}"
 
 PROJECT_FILE="racer.project.json"
 OUTPUT_FILE="build/racer.rbxlx"
-PLACE_ID="${ROBLOX_RACER_PLACE_ID:-${ROBLOX_PLACE_ID:-}}"
+PLACE_ID="${ROBLOX_RACER_PLACE_ID}"
+LOBBY_PLACE_ID="${ROBLOX_LOBBY_PLACE_ID:-0}"
 BUILD_INFO_FILE="src/shared/GeneratedBuildInfo.lua"
 PLACE_IDS_FILE="src/shared/GeneratedPlaceIds.lua"
 
 git_repo() {
-  git -c safe.directory="${PWD}" "$@"
+  git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
 }
 
 if [[ "${1:-}" != "" ]]; then
@@ -19,15 +25,37 @@ if [[ "${1:-}" != "" ]]; then
   exit 2
 fi
 
-: "${PLACE_ID:?ROBLOX_RACER_PLACE_ID or ROBLOX_PLACE_ID is required}"
+if [[ ! "${ROBLOX_UNIVERSE_ID}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ROBLOX_UNIVERSE_ID must be a positive decimal integer." >&2
+  exit 2
+fi
 
-if ! git_repo diff --quiet --ignore-submodules -- || ! git_repo diff --cached --quiet --ignore-submodules --; then
+if [[ ! "${PLACE_ID}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ROBLOX_RACER_PLACE_ID must be a positive decimal integer." >&2
+  exit 2
+fi
+
+if [[ ! "${LOBBY_PLACE_ID}" =~ ^(0|[1-9][0-9]*)$ ]]; then
+  echo "ROBLOX_LOBBY_PLACE_ID must be zero or a positive decimal integer." >&2
+  exit 2
+fi
+
+TREE_STATUS="$(git_repo status --porcelain=v1 --untracked-files=all --ignore-submodules=none)"
+if [[ -n "${TREE_STATUS}" ]]; then
   echo "Refusing to publish from a dirty git tree. Commit or stash changes first." >&2
   exit 1
 fi
 
 GIT_COMMIT="$(git_repo rev-parse HEAD)"
 GIT_COMMIT_SHORT="$(git_repo rev-parse --short=12 HEAD)"
+PREFLIGHT_TAG="racer-publish-preflight-$$"
+if git_repo rev-parse --verify --quiet "refs/tags/${PREFLIGHT_TAG}" >/dev/null; then
+  echo "Temporary publish preflight tag unexpectedly exists: ${PREFLIGHT_TAG}." >&2
+  exit 1
+fi
+git_repo update-ref "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}" ""
+git_repo update-ref -d "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}"
+
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 ORIGINAL_BUILD_INFO="$(mktemp)"
 ORIGINAL_PLACE_IDS="$(mktemp)"
@@ -44,7 +72,7 @@ trap restore_build_info EXIT
 mkdir -p build
 cat > "${PLACE_IDS_FILE}" <<EOF
 return {
-	LobbyPlaceId = ${ROBLOX_LOBBY_PLACE_ID:-0},
+	LobbyPlaceId = ${LOBBY_PLACE_ID},
 	RacerPlaceId = ${PLACE_ID},
 }
 EOF
@@ -65,19 +93,44 @@ PUBLISH_RESPONSE="$(curl --fail-with-body \
   --data-binary @"${OUTPUT_FILE}" \
   "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"
 
-PLACE_VERSION="$(printf '%s' "${PUBLISH_RESPONSE}" \
-  | sed -nE 's/.*"(versionNumber|placeVersion|version)"[[:space:]]*:[[:space:]]*"?([0-9]+)"?.*/\2/p' \
-  | head -n 1)"
-if [[ "${PLACE_VERSION}" == "" ]]; then
-  PLACE_VERSION="$(printf '%s' "${PUBLISH_RESPONSE}" | sed -nE 's/^[^0-9]*([0-9]+)[^0-9]*$/\1/p' | head -n 1)"
+if ! PLACE_VERSION="$(PUBLISH_RESPONSE="${PUBLISH_RESPONSE}" python3 -c 'import json
+import os
+import sys
+
+try:
+    payload = json.loads(os.environ["PUBLISH_RESPONSE"])
+except (KeyError, json.JSONDecodeError) as error:
+    print(f"invalid Roblox publish JSON: {error}", file=sys.stderr)
+    raise SystemExit(1)
+
+version = payload.get("versionNumber")
+if not isinstance(version, int) or isinstance(version, bool) or version <= 0:
+    print("Roblox publish response must contain a positive integer versionNumber", file=sys.stderr)
+    raise SystemExit(1)
+print(version)')"; then
+  echo "Published response did not include a valid place version." >&2
+  exit 1
 fi
 
-if [[ "${PLACE_VERSION}" != "" ]]; then
-  git_repo tag -f "racer-place-v${PLACE_VERSION}" "${GIT_COMMIT}" >/dev/null
-  echo "Tagged racer-place-v${PLACE_VERSION} -> ${GIT_COMMIT_SHORT}"
-else
-  echo "Published response did not include a recognizable place version:" >&2
-  echo "${PUBLISH_RESPONSE}" >&2
+TAG="racer-place-v${PLACE_VERSION}"
+if git_repo rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
+  echo "Refusing to move existing immutable publish tag ${TAG}." >&2
+  exit 1
 fi
+git_repo tag "${TAG}" "${GIT_COMMIT}"
+
+TAG_COMMIT="$(git_repo rev-parse "refs/tags/${TAG}^{commit}")"
+if [[ "${TAG_COMMIT}" != "${GIT_COMMIT}" ]]; then
+  echo "Publish tag ${TAG} did not resolve to the published commit ${GIT_COMMIT}." >&2
+  exit 1
+fi
+
+LOOKUP_OUTPUT="$("${SCRIPT_DIR}/lookup-place-version.sh" "${PLACE_VERSION}")"
+if [[ "${LOOKUP_OUTPUT}" != *"Commit: ${GIT_COMMIT}"* ]]; then
+  echo "PlaceVersion lookup did not resolve ${PLACE_VERSION} to ${GIT_COMMIT}." >&2
+  exit 1
+fi
+printf '%s\n' "${LOOKUP_OUTPUT}"
+echo "Tagged ${TAG} -> ${GIT_COMMIT_SHORT}"
 
 echo "Published Racer Lab place ${PLACE_ID} in universe ${ROBLOX_UNIVERSE_ID}"

@@ -16,6 +16,9 @@ CLIENT = (ROOT / "src/racer/client/Main.client.lua").read_text()
 SERVER = (ROOT / "src/racer/server/Main.server.lua").read_text()
 MATH = (ROOT / "src/racer/shared/RacerMath.lua").read_text()
 TEXTURES = (ROOT / "src/racer/shared/RacerTextures.lua").read_text()
+PUBLISH_SCRIPT = (ROOT / "scripts/publish-place.sh").read_text()
+LOOKUP_SCRIPT = (ROOT / "scripts/lookup-place-version.sh").read_text()
+DOCKERFILE = (ROOT / "Dockerfile").read_text()
 
 
 def fail(message: str):
@@ -25,6 +28,27 @@ def fail(message: str):
 
 if "src/shared/GameConfig.lua" not in RACER_PROJECT.get("globIgnorePaths", []):
     fail("Racer Rojo build must exclude the ignored local src/shared/GameConfig.lua")
+
+for token in [
+    '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
+    "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
+    'payload.get("versionNumber")',
+    'update-ref "refs/tags/${PREFLIGHT_TAG}"',
+    'git_repo tag "${TAG}" "${GIT_COMMIT}"',
+    'lookup-place-version.sh" "${PLACE_VERSION}"',
+]:
+    if token not in PUBLISH_SCRIPT:
+        fail(f"Racer publish contract is missing: {token}")
+
+for forbidden in ["ROBLOX_PLACE_ID", "git_repo tag -f", "git tag -f"]:
+    if forbidden in PUBLISH_SCRIPT:
+        fail(f"Racer publish contract must not contain: {forbidden}")
+
+if 'git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}"' not in LOOKUP_SCRIPT:
+    fail("PlaceVersion lookup must support the release container's mounted git repository")
+
+if "python3" not in DOCKERFILE:
+    fail("The release image must install Python for publish and verification scripts")
 
 
 def require(pattern: str, text: str, message: str):
