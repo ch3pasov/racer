@@ -8,5 +8,7 @@ This project ports the v1 straight-road mechanics from `jakesgordon/javascript-r
 - Copyright: Copyright (c) 2012, 2013, 2014, 2015, 2016 Jake Gordon and contributors
 - License: MIT
 
-Only the permissively licensed code ideas and math are reused. The original music and borrowed
-OutRun-style sprites are not included.
+The permissively licensed code ideas and math are reused. The original music
+and full borrowed OutRun-style sprite set are not included. The six repainted
+player-car frames use the original car silhouettes as pose and scale templates;
+the original reference PNGs remain outside this repository.

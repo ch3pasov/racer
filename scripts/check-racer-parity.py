@@ -131,7 +131,16 @@ if not re.search(r"SheetSize\s*=\s*Vector2\.new\(1024,\s*1024\)", TEXTURES):
 texture_source_dir = ROOT / "assets/racer/textures/v3-sources"
 if not texture_source_dir.exists():
     fail("racer-sprites-v3 must have committed source PNG sprites")
+template_player_sprites = {
+    "PLAYER_LEFT",
+    "PLAYER_STRAIGHT",
+    "PLAYER_RIGHT",
+    "PLAYER_UPHILL_LEFT",
+    "PLAYER_UPHILL_STRAIGHT",
+    "PLAYER_UPHILL_RIGHT",
+}
 texture_rects = {}
+template_player_bounds = {}
 for match in re.finditer(
     r"([A-Z0-9_]+)\s*=\s*\{\s*x\s*=\s*(\d+),\s*y\s*=\s*(\d+),\s*w\s*=\s*(\d+),\s*h\s*=\s*(\d+)\s*\}",
     TEXTURES,
@@ -147,6 +156,46 @@ for match in re.finditer(
     bottom_alpha_count = sum(1 for pixel_x in range(x, x + w) if bottom_row[pixel_x * 4 + 3] > 0)
     if bottom_alpha_count == 0:
         fail(f"texture sprite {name} must touch the bottom of its hitbox rect")
+    if name in template_player_sprites:
+        visible = [
+            (local_x, local_y)
+            for local_y in range(h)
+            for local_x in range(w)
+            if texture_rows[y + local_y][(x + local_x) * 4 + 3] > 0
+        ]
+        left = min(local_x for local_x, _ in visible)
+        top = min(local_y for _, local_y in visible)
+        right = max(local_x for local_x, _ in visible)
+        bottom = max(local_y for _, local_y in visible)
+        visible_width = right - left + 1
+        visible_height = bottom - top + 1
+        if visible_width < w * 0.95 or visible_height < h * 0.90:
+            fail(f"texture sprite {name} must fill its original Racer pose rectangle")
+        template_player_bounds[name] = (visible_width, visible_height)
+
+for direction in ("LEFT", "STRAIGHT", "RIGHT"):
+    normal_height = template_player_bounds[f"PLAYER_{direction}"][1]
+    uphill_height = template_player_bounds[f"PLAYER_UPHILL_{direction}"][1]
+    if uphill_height < normal_height + 4:
+        fail(f"PLAYER_UPHILL_{direction} must stay visibly taller than its normal-road pose")
+
+for prefix in ("PLAYER_", "PLAYER_UPHILL_"):
+    straight_name = f"{prefix}STRAIGHT"
+    straight = texture_rects[straight_name]
+    for direction in ("LEFT", "RIGHT"):
+        turn_name = f"{prefix}{direction}"
+        turn = texture_rects[turn_name]
+        changed = 0
+        for local_y in range(straight["h"]):
+            straight_row = texture_rows[straight["y"] + local_y]
+            turn_row = texture_rows[turn["y"] + local_y]
+            for local_x in range(straight["w"]):
+                straight_offset = (straight["x"] + local_x) * 4
+                turn_offset = (turn["x"] + local_x) * 4
+                if straight_row[straight_offset : straight_offset + 4] != turn_row[turn_offset : turn_offset + 4]:
+                    changed += 1
+        if changed < straight["w"] * straight["h"] * 0.12:
+            fail(f"texture sprite {turn_name} must read distinctly from {straight_name}")
 
 palm_match = re.search(
     r"PALM_TREE\s*=\s*\{\s*x\s*=\s*(\d+),\s*y\s*=\s*(\d+),\s*w\s*=\s*(\d+),\s*h\s*=\s*(\d+)\s*\}",

@@ -38,11 +38,12 @@ def read_png_rgba(path):
             break
     if width is None or height is None:
         raise RuntimeError(f"{path} has no PNG header")
-    if bit_depth != 8 or color_type not in {2, 3, 6}:
-        raise RuntimeError(f"{path} must be 8-bit RGB, indexed, or RGBA PNG")
+    supported = (bit_depth == 8 and color_type in {2, 3, 6}) or (bit_depth == 4 and color_type == 3)
+    if not supported:
+        raise RuntimeError(f"{path} must be 8-bit RGB/RGBA or 4/8-bit indexed PNG")
 
     channels = {2: 3, 3: 1, 6: 4}[color_type]
-    stride = width * channels
+    stride = (width + 1) // 2 if color_type == 3 and bit_depth == 4 else width * channels
     raw = zlib.decompress(bytes(idat))
     rows = []
     cursor = 0
@@ -85,7 +86,14 @@ def read_png_rgba(path):
             if palette is None:
                 raise RuntimeError(f"{path} indexed PNG has no palette")
             rgba = bytearray()
-            for value in row:
+            values = []
+            if bit_depth == 4:
+                for value in row:
+                    values.extend((value >> 4, value & 0x0F))
+                values = values[:width]
+            else:
+                values = row
+            for value in values:
                 base = value * 3
                 rgba.extend(palette[base : base + 3])
                 alpha = transparency[value] if transparency and value < len(transparency) else 255

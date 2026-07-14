@@ -20,3 +20,17 @@ python3 tools/save-codex-image.py --kind generated --output assets/racer/texture
 
 Use `--kind input` for the latest image attached in chat. This reads local
 Codex session data only; it does not call an image API or require an API key.
+
+The six production player-car sprites are repainted on the original Racer pose
+templates so their steering silhouettes and uphill scale stay compatible with
+the renderer. Keep the six reference PNGs outside the repository and rebuild
+the transparent sources with:
+
+```sh
+python3 tools/prepare-original-template-player-car.py /path/to/reference-directory
+python3 tools/generate-racer-textures.py
+```
+
+The reference directory must contain `original-player_left.png`,
+`original-player_straight.png`, `original-player_right.png`, and the matching
+three `original-player_uphill_*.png` files.
