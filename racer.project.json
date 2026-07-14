@@ -1,5 +1,8 @@
 {
   "name": "RacerLab",
+  "globIgnorePaths": [
+    "src/shared/GameConfig.lua"
+  ],
   "tree": {
     "$className": "DataModel",
 

@@ -10,6 +10,7 @@ import zlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RACER_PROJECT = json.loads((ROOT / "racer.project.json").read_text())
 CONFIG = (ROOT / "src/racer/shared/RacerConfig.lua").read_text()
 CLIENT = (ROOT / "src/racer/client/Main.client.lua").read_text()
 SERVER = (ROOT / "src/racer/server/Main.server.lua").read_text()
@@ -20,6 +21,10 @@ TEXTURES = (ROOT / "src/racer/shared/RacerTextures.lua").read_text()
 def fail(message: str):
     print(f"FAIL: {message}")
     sys.exit(1)
+
+
+if "src/shared/GameConfig.lua" not in RACER_PROJECT.get("globIgnorePaths", []):
+    fail("Racer Rojo build must exclude the ignored local src/shared/GameConfig.lua")
 
 
 def require(pattern: str, text: str, message: str):
