@@ -7,16 +7,16 @@ from statistics import median
 from generate_racer_textures_support import read_png_rgba, write_png
 
 
-SHEET_DIR = Path("assets/racer/textures/v3-sheets")
+SHEET_PATH = Path("assets/racer/textures/v3-sheets/player-car-v3-original-poses-generated.png")
 SOURCE_DIR = Path("assets/racer/textures/v3-sources")
 
-RAW_SOURCES = {
-    "PLAYER_LEFT": "player-car-v2-left-final-generated.png",
-    "PLAYER_STRAIGHT": "player-car-v2-master-generated.png",
-    "PLAYER_RIGHT": "player-car-v2-right-final-generated.png",
-    "PLAYER_UPHILL_LEFT": "player-car-v2-uphill-left-final-generated.png",
-    "PLAYER_UPHILL_STRAIGHT": "player-car-v2-uphill-straight-final-generated.png",
-    "PLAYER_UPHILL_RIGHT": "player-car-v2-uphill-right-final-generated.png",
+CELLS = {
+    "PLAYER_LEFT": (0, 0),
+    "PLAYER_STRAIGHT": (1, 0),
+    "PLAYER_RIGHT": (2, 0),
+    "PLAYER_UPHILL_LEFT": (0, 1),
+    "PLAYER_UPHILL_STRAIGHT": (1, 1),
+    "PLAYER_UPHILL_RIGHT": (2, 1),
 }
 
 BACKGROUND_DISTANCE = 48
@@ -129,6 +129,16 @@ def neutralize_magenta(rows):
     return rows
 
 
+def extract_cell(rows, width, height, column, row_index):
+    min_x = round(column * width / 3)
+    max_x = round((column + 1) * width / 3)
+    row_divider = round(height * 0.46)
+    min_y = 0 if row_index == 0 else row_divider
+    max_y = row_divider if row_index == 0 else height
+    cell = [bytearray(row[min_x * 4 : max_x * 4]) for row in rows[min_y:max_y]]
+    return max_x - min_x, max_y - min_y, cell
+
+
 def crop_visible(rows):
     width = len(rows[0]) // 4
     height = len(rows)
@@ -156,14 +166,14 @@ def crop_visible(rows):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("names", nargs="*", choices=RAW_SOURCES)
+    parser.add_argument("names", nargs="*", choices=CELLS)
     args = parser.parse_args()
-    names = args.names or list(RAW_SOURCES)
+    names = args.names or list(CELLS)
+    sheet_width, sheet_height, sheet_rows = read_png_rgba(SHEET_PATH)
 
     for name in names:
-        filename = RAW_SOURCES[name]
-        source = SHEET_DIR / filename
-        _, _, rows = read_png_rgba(source)
+        column, row_index = CELLS[name]
+        _, _, rows = extract_cell(sheet_rows, sheet_width, sheet_height, column, row_index)
         width, height, cropped = crop_visible(neutralize_magenta(remove_chroma(rows)))
         output = SOURCE_DIR / f"{name}.png"
         write_png(output, width, height, cropped)
