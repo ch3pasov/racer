@@ -1363,8 +1363,12 @@ for token in [
 if "render(fullRenderer, renderState)" not in CLIENT:
     fail("active player renderer must render every frame like javascript-racer")
 
-if "math.min(\n\t\tpredictedState.fastLapTime.Value,\n\t\tsource.fastLapTime.Value" not in CLIENT:
-    fail("active player best lap prediction must not be overwritten by a slower server snapshot")
+require(
+    r"predictedState\.fastLapTime\.Value\s*=\s*math\.min\(\s*"
+    r"predictedState\.fastLapTime\.Value,\s*source\.fastLapTime\.Value\s*\)",
+    CLIENT,
+    "active player best lap prediction must not be overwritten by a slower server snapshot",
+)
 
 if "source.lastLapTime.Value > 0" not in CLIENT or "source.currentLapTime.Value == 0" not in CLIENT:
     fail("active player last lap prediction must survive stale zero server snapshots")
@@ -1524,7 +1528,7 @@ for token in [
     "viewportTop + MOBILE_TOPBAR_CLEARANCE",
     "local compactSettingsPanel = state ~= nil and RacerConfig.isV5Plus(state.mode.Value)",
     "local rightPanelButtonWidth =",
-    "settingsButton.Position = UDim2.fromOffset(\n\t\t\t\trightPanelRight,\n\t\t\t\tviewportTop + MOBILE_HUD_MARGIN + 80",
+    "UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 80)",
     "settingsPanel.AnchorPoint = Vector2.new(0.5, 0.5)",
     "math.floor(absoluteSize.X / 2 + 0.5)",
     "if compactSettingsPanel then 184 else 430",
@@ -1622,7 +1626,10 @@ for token in [
     "local function focusDebugText(): string",
     "local function hudDebugText(): string",
     "local function activeDebugText(state): string",
-    "`keys K:{inputDebugFlags(keyboardInputs)} P:{inputDebugFlags(pointerInputs)} I:{inputDebugFlags(pressedInputs)}`",
+    "`keys K:",
+    "inputDebugFlags(keyboardInputs)",
+    "inputDebugFlags(pointerInputs)",
+    "pressedInputs",
     "racerStateDebugText(\"local\", predictedState)",
     "racerStateDebugText(\"server\", state)",
     "hudDebugText()",

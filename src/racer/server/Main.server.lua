@@ -150,7 +150,8 @@ recordBillboardText.Parent = ReplicatedStorage
 
 local SPAWN_CFRAME = CFrame.new(0, 4, 22)
 local LOBBY_PLACE_ID = GeneratedPlaceIds.LobbyPlaceId or 0
-local RACER_PLACE_ID = if GeneratedPlaceIds.RacerPlaceId and GeneratedPlaceIds.RacerPlaceId > 0
+local RACER_PLACE_ID = if GeneratedPlaceIds.RacerPlaceId
+		and GeneratedPlaceIds.RacerPlaceId > 0
 	then GeneratedPlaceIds.RacerPlaceId
 	else game.PlaceId
 local MAX_ACCUMULATED_TIME = 1
@@ -229,9 +230,7 @@ end
 
 local function setRecordBillboardTop(rows)
 	local top = rows and rows[1]
-	recordBillboardText.Value = if top
-		then `#1 {top.name} {formatLapTime(top.time)}`
-		else ""
+	recordBillboardText.Value = if top then `#1 {top.name} {formatLapTime(top.time)}` else ""
 end
 
 local function createValue(parent: Instance, className: string, name: string, initialValue)
@@ -653,8 +652,13 @@ local function recordLapForRecordBoards(session, player: Player, lapTime: number
 			end)
 		end)
 		if not globalOk or not personalOk then
-			warn(`[RacerLab] v7 leaderboard save failed global={globalOk} {globalErr} personal={personalOk} {personalErr}`)
-			setRecordLeaderboardText("self", `v7 Your Top 10\nSave failed\n{formatLapTime(lapTime)}`)
+			warn(
+				`[RacerLab] v7 leaderboard save failed global={globalOk} {globalErr} personal={personalOk} {personalErr}`
+			)
+			setRecordLeaderboardText(
+				"self",
+				`v7 Your Top 10\nSave failed\n{formatLapTime(lapTime)}`
+			)
 		end
 		refreshRecordLeaderboards(player)
 	end)
@@ -872,7 +876,9 @@ local function createVersionBadge()
 	label.BorderSizePixel = 0
 	label.Font = Enum.Font.GothamBold
 	label.Size = UDim2.fromScale(1, 1)
-	local version = if game.PlaceVersion > 0 then tostring(game.PlaceVersion) else RacerConfig.VersionBuild
+	local version = if game.PlaceVersion > 0
+		then tostring(game.PlaceVersion)
+		else RacerConfig.VersionBuild
 	label.Text = `build {version}`
 	label.TextColor3 = Color3.fromRGB(236, 240, 244)
 	label.TextScaled = true
@@ -935,9 +941,24 @@ local function createV7LeaderboardBoard(
 end
 
 local function createV7Leaderboards()
-	createV7LeaderboardBoard("self", "v7 Your Top 10", Vector3.new(-24, 5.2, 66), Color3.fromRGB(236, 240, 244))
-	createV7LeaderboardBoard("friends", "v7 Friends Top 10", Vector3.new(0, 5.2, 66), Color3.fromRGB(134, 240, 150))
-	createV7LeaderboardBoard("global", "v7 Global Top 10", Vector3.new(24, 5.2, 66), Color3.fromRGB(255, 221, 78))
+	createV7LeaderboardBoard(
+		"self",
+		"v7 Your Top 10",
+		Vector3.new(-24, 5.2, 66),
+		Color3.fromRGB(236, 240, 244)
+	)
+	createV7LeaderboardBoard(
+		"friends",
+		"v7 Friends Top 10",
+		Vector3.new(0, 5.2, 66),
+		Color3.fromRGB(134, 240, 150)
+	)
+	createV7LeaderboardBoard(
+		"global",
+		"v7 Global Top 10",
+		Vector3.new(24, 5.2, 66),
+		Color3.fromRGB(255, 221, 78)
+	)
 end
 
 local function buildLab()
@@ -1053,7 +1074,10 @@ local function updateRacer(session, dt: number)
 		session.speed = RacerMath.accelerate(session.speed, RacerConfig.OffRoadDecel, dt)
 	end
 
-	if RacerConfig.isFinalLike(session.definition.Mode) and (session.playerX < -1 or session.playerX > 1) then
+	if
+		RacerConfig.isFinalLike(session.definition.Mode)
+		and (session.playerX < -1 or session.playerX > 1)
+	then
 		local roadsideSprite = RacerConfig.roadsideCollisionSprite(
 			session.definition.Mode,
 			segmentIndex,

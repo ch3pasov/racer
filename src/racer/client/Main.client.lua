@@ -263,10 +263,8 @@ local function ensurePredictedState(source)
 		return predictedState
 	end
 
-	predictedState.fastLapTime.Value = math.min(
-		predictedState.fastLapTime.Value,
-		source.fastLapTime.Value
-	)
+	predictedState.fastLapTime.Value =
+		math.min(predictedState.fastLapTime.Value, source.fastLapTime.Value)
 	if
 		source.lastLapTime.Value > 0
 		or (
@@ -378,7 +376,10 @@ local function updatePredictedState(source, dt: number)
 				RacerMath.accelerate(prediction.speed.Value, RacerConfig.OffRoadDecel, step)
 		end
 
-		if RacerConfig.isFinalLike(mode) and (prediction.playerX.Value < -1 or prediction.playerX.Value > 1) then
+		if
+			RacerConfig.isFinalLike(mode)
+			and (prediction.playerX.Value < -1 or prediction.playerX.Value > 1)
+		then
 			local roadsideSprite =
 				RacerConfig.roadsideCollisionSprite(mode, segmentIndex, prediction.playerX.Value)
 			if roadsideSprite then
@@ -604,7 +605,12 @@ local function createDebugBox(parent: Instance, name: string, color: Color3, zIn
 	box.ZIndex = zIndex
 	box.Parent = parent
 
-	local function createBoxLine(lineName: string, position: UDim2, size: UDim2, anchorPoint: Vector2?)
+	local function createBoxLine(
+		lineName: string,
+		position: UDim2,
+		size: UDim2,
+		anchorPoint: Vector2?
+	)
 		local line = Instance.new("Frame")
 		line.Name = lineName
 		line.AnchorPoint = anchorPoint or Vector2.new(0, 0)
@@ -619,19 +625,9 @@ local function createDebugBox(parent: Instance, name: string, color: Color3, zIn
 	end
 
 	createBoxLine("Top", UDim2.fromScale(0, 0), UDim2.new(1, 0, 0, 2))
-	createBoxLine(
-		"Bottom",
-		UDim2.fromScale(0, 1),
-		UDim2.new(1, 0, 0, 2),
-		Vector2.new(0, 1)
-	)
+	createBoxLine("Bottom", UDim2.fromScale(0, 1), UDim2.new(1, 0, 0, 2), Vector2.new(0, 1))
 	createBoxLine("Left", UDim2.fromScale(0, 0), UDim2.new(0, 2, 1, 0))
-	createBoxLine(
-		"Right",
-		UDim2.fromScale(1, 0),
-		UDim2.new(0, 2, 1, 0),
-		Vector2.new(1, 0)
-	)
+	createBoxLine("Right", UDim2.fromScale(1, 0), UDim2.new(0, 2, 1, 0), Vector2.new(1, 0))
 
 	local stroke = Instance.new("UIStroke")
 	stroke.Name = "Outline"
@@ -866,7 +862,8 @@ local function createRenderer(
 			createSpritebox(object, 768)
 			createCollisionbox(object, 769)
 
-			local spriteCanopy = createFrame(content, "SpriteCanopy", Color3.fromRGB(20, 112, 36), 762)
+			local spriteCanopy =
+				createFrame(content, "SpriteCanopy", Color3.fromRGB(20, 112, 36), 762)
 			spriteCanopy.Visible = false
 			rounded(spriteCanopy, 8)
 
@@ -875,11 +872,13 @@ local function createRenderer(
 			spriteCanopy2.Visible = false
 			rounded(spriteCanopy2, 8)
 
-			local spriteTrunk = createFrame(content, "SpriteTrunk", Color3.fromRGB(118, 88, 62), 762)
+			local spriteTrunk =
+				createFrame(content, "SpriteTrunk", Color3.fromRGB(118, 88, 62), 762)
 			spriteTrunk.Visible = false
 			rounded(spriteTrunk, 3)
 
-			local spriteBody = createFrame(content, "SpriteBody", Color3.fromRGB(124, 124, 116), 762)
+			local spriteBody =
+				createFrame(content, "SpriteBody", Color3.fromRGB(124, 124, 116), 762)
 			spriteBody.Visible = false
 			rounded(spriteBody, 6)
 
@@ -909,7 +908,8 @@ local function createRenderer(
 			shadow.Size = UDim2.new(1.15, 0, 0.3, 0)
 			rounded(shadow, 5)
 
-			local trafficBody = createFrame(content, "TrafficBody", Color3.fromRGB(255, 230, 96), 761)
+			local trafficBody =
+				createFrame(content, "TrafficBody", Color3.fromRGB(255, 230, 96), 761)
 			trafficBody.Visible = false
 			rounded(trafficBody, 2)
 
@@ -936,8 +936,12 @@ local function createRenderer(
 
 			table.insert(finalObjects, object)
 
-			local roadsideCollisionbox =
-				createDebugBox(root, `RoadsideCollisionbox_{index}`, Color3.fromRGB(255, 56, 56), 820)
+			local roadsideCollisionbox = createDebugBox(
+				root,
+				`RoadsideCollisionbox_{index}`,
+				Color3.fromRGB(255, 56, 56),
+				820
+			)
 			table.insert(roadsideCollisionboxes, roadsideCollisionbox)
 		end
 	end
@@ -1557,7 +1561,8 @@ local function setRow(
 	row.junctionLeft.BackgroundColor3 = colorWithFog(color.Road, fog)
 	row.junctionRight.Visible = showRight
 	row.junctionRight.Position = UDim2.new(centerX + roadWidth / 2, 0, branchY, 0)
-	row.junctionRight.Size = UDim2.new(math.max(0, 1 - (centerX + roadWidth / 2)), 0, branchHeight, 0)
+	row.junctionRight.Size =
+		UDim2.new(math.max(0, 1 - (centerX + roadWidth / 2)), 0, branchHeight, 0)
 	row.junctionRight.BackgroundColor3 = colorWithFog(color.Road, fog)
 
 	row.leftRumble.Position = UDim2.new(centerX - roadWidth / 2 - rumbleWidth, 0, 0, 0)
@@ -1814,8 +1819,10 @@ local function render(renderer, state)
 					object.ZIndex = objectZIndex(drawLayer)
 					setTrafficObject(object, carData)
 					local collisionOverlap = RacerConfig.Traffic.CollisionOverlap
-					local playerDebugWidthScale =
-						RacerConfig.Traffic.PlayerWidth * scale * roadWidthSetting / 2
+					local playerDebugWidthScale = RacerConfig.Traffic.PlayerWidth
+						* scale
+						* roadWidthSetting
+						/ 2
 					local collisionboxWidth = math.max(
 						0,
 						width * collisionOverlap - playerDebugWidthScale * (1 - collisionOverlap)
@@ -1857,9 +1864,7 @@ local function render(renderer, state)
 					spriteSizeScale(spriteDef.width, spriteDef.height, scale, roadWidthSetting)
 				object.ZIndex = objectZIndex(drawLayer)
 				setSpriteObject(object, spriteData, mode)
-				if
-					placeClippedObject(object, spriteX, spriteY, width, height, projected.clip)
-				then
+				if placeClippedObject(object, spriteX, spriteY, width, height, projected.clip) then
 					drawLayer += 1
 					objectCursor = nextCursor
 				end
@@ -1901,7 +1906,11 @@ local function render(renderer, state)
 	local playerBounce =
 		RacerConfig.playerBounce(position, speed / RacerConfig.MaxSpeed, HEIGHT / 480)
 	local roadsideCollisionboxCursor = 0
-	if RacerConfig.isFinalLike(mode) and useCollisionboxDebug and renderer.roadsideCollisionboxes then
+	if
+		RacerConfig.isFinalLike(mode)
+		and useCollisionboxDebug
+		and renderer.roadsideCollisionboxes
+	then
 		for index = #objectSegments, 1, -1 do
 			local projected = objectSegments[index]
 			local scale = projected.p1.scale
@@ -1918,10 +1927,14 @@ local function render(renderer, state)
 				end
 				local spriteWidthWorld = spriteData.definition.width * RacerConfig.SpriteScale
 				local spriteCenterWorld = RacerConfig.roadsideSpriteCenter(spriteData)
-				local playerWidth = RacerConfig.Traffic.PlayerWidth
-				local playerDebugWidth = playerWidth
-				local collisionMinWorld = spriteCenterWorld - spriteWidthWorld / 2 - playerWidth / 2
-				local collisionMaxWorld = spriteCenterWorld + spriteWidthWorld / 2 + playerWidth / 2
+				local playerWidthWorld = RacerConfig.Traffic.PlayerWidth
+				local playerDebugWidth = playerWidthWorld
+				local collisionMinWorld = spriteCenterWorld
+					- spriteWidthWorld / 2
+					- playerWidthWorld / 2
+				local collisionMaxWorld = spriteCenterWorld
+					+ spriteWidthWorld / 2
+					+ playerWidthWorld / 2
 				if spriteData.offset > 0 then
 					collisionMinWorld = math.max(collisionMinWorld, 1)
 				else
@@ -1932,12 +1945,11 @@ local function render(renderer, state)
 				local collisionboxWidthWorld =
 					math.max(0, collisionboxMaxWorld - collisionboxMinWorld)
 				if collisionboxWidthWorld > 0 then
-					local collisionboxCenterWorld =
-						(collisionboxMinWorld + collisionboxMaxWorld) / 2
+					local collisionboxCenterWorld = (collisionboxMinWorld + collisionboxMaxWorld)
+						/ 2
 					local collisionboxX = projected.p1.x
 						+ scale * collisionboxCenterWorld * roadWidthSetting * WIDTH / 2
-					local collisionboxWidth =
-						collisionboxWidthWorld * scale * roadWidthSetting / 2
+					local collisionboxWidth = collisionboxWidthWorld * scale * roadWidthSetting / 2
 					local nextCursor = roadsideCollisionboxCursor + 1
 					if
 						placeScreenDebugBox(
@@ -2307,7 +2319,8 @@ local function updateFullViewportSize()
 	end
 	if mobileStatusLeft and mobileStatusRight then
 		local leftStatusWidth = math.max(96, math.min(260, leftPanelWidth - MOBILE_HUD_MARGIN * 2))
-		local rightStatusWidth = math.max(96, math.min(260, rightPanelWidth - MOBILE_HUD_MARGIN * 2))
+		local rightStatusWidth =
+			math.max(96, math.min(260, rightPanelWidth - MOBILE_HUD_MARGIN * 2))
 		local mobileStatusHeight = 68
 		mobileStatusLeft.Position =
 			UDim2.fromOffset(MOBILE_HUD_MARGIN, viewportTop + MOBILE_TOPBAR_CLEARANCE)
@@ -2326,16 +2339,12 @@ local function updateFullViewportSize()
 			exitButton.Position = UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN)
 			exitButton.Size = UDim2.fromOffset(rightPanelButtonWidth, 34)
 			exitButton.TextSize = 14
-			rejoinButton.Position = UDim2.fromOffset(
-				rightPanelRight,
-				viewportTop + MOBILE_HUD_MARGIN + 40
-			)
+			rejoinButton.Position =
+				UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 40)
 			rejoinButton.Size = UDim2.fromOffset(rightPanelButtonWidth, 34)
 			rejoinButton.TextSize = 14
-			settingsButton.Position = UDim2.fromOffset(
-				rightPanelRight,
-				viewportTop + MOBILE_HUD_MARGIN + 80
-			)
+			settingsButton.Position =
+				UDim2.fromOffset(rightPanelRight, viewportTop + MOBILE_HUD_MARGIN + 80)
 			settingsButton.Size = UDim2.fromOffset(rightPanelButtonWidth, 34)
 			settingsButton.TextSize = 14
 			settingsPanel.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -2406,7 +2415,12 @@ activeStatus.ZIndex = 255
 activeStatus.Parent = fullScreen
 updateFullViewportSize()
 
-local function createActiveStatusField(name: string, position: UDim2, size: UDim2, alignment: Enum.TextXAlignment)
+local function createActiveStatusField(
+	name: string,
+	position: UDim2,
+	size: UDim2,
+	alignment: Enum.TextXAlignment
+)
 	local label = Instance.new("TextLabel")
 	label.Name = name
 	label.BackgroundTransparency = 1
@@ -2497,9 +2511,10 @@ local function updateActiveStatus(state)
 				then `\nLast: {formatTime(state.lastLapTime.Value)}`
 				else ""
 			mobileStatusLeft.Text = `Time:\n{formatTime(state.currentLapTime.Value)}{lastLap}`
-			mobileStatusRight.Text = `{5 * math.round(state.speed.Value / 500)} mph\nFast: {formatTime(
-				state.fastLapTime.Value
-			)}`
+			mobileStatusRight.Text =
+				`{5 * math.round(state.speed.Value / 500)} mph\nFast: {formatTime(
+					state.fastLapTime.Value
+				)}`
 			mobileStatusLeft.Visible = mobileLayout
 			mobileStatusRight.Visible = mobileLayout
 		end
@@ -2729,12 +2744,8 @@ local function updateSettingLabels()
 	end
 end
 
-textureToggleLabel = makeButton(
-	settingsPanel,
-	"[ ] Textures",
-	UDim2.fromOffset(12, 248),
-	UDim2.new(1, -24, 0, 32)
-)
+textureToggleLabel =
+	makeButton(settingsPanel, "[ ] Textures", UDim2.fromOffset(12, 248), UDim2.new(1, -24, 0, 32))
 textureToggleLabel.TextXAlignment = Enum.TextXAlignment.Left
 textureToggleLabel.MouseButton1Click:Connect(function()
 	useTextureArt = not useTextureArt
@@ -2787,7 +2798,8 @@ collisionboxToggleLabel.MouseButton1Click:Connect(function()
 	updateSettingLabels()
 end)
 
-resetButton = makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 374), UDim2.new(1, -24, 0, 36))
+resetButton =
+	makeButton(settingsPanel, "Reset", UDim2.fromOffset(12, 374), UDim2.new(1, -24, 0, 36))
 resetButton.MouseButton1Click:Connect(function()
 	actionEvent:FireServer("ResetSettings")
 end)
@@ -2863,7 +2875,11 @@ local function getPlayerModuleControls()
 		return nil
 	end
 	local ok, playerModuleApi = pcall(require, playerModule)
-	if not ok or typeof(playerModuleApi) ~= "table" or typeof(playerModuleApi.GetControls) ~= "function" then
+	if
+		not ok
+		or typeof(playerModuleApi) ~= "table"
+		or typeof(playerModuleApi.GetControls) ~= "function"
+	then
 		return nil
 	end
 	local controlsOk, controls = pcall(function()
@@ -3033,7 +3049,12 @@ local function bindMobileHoldButton(button: TextButton, inputName: string)
 	end)
 end
 
-local function createMobileControlButton(name: string, text: string, position: UDim2, inputName: string)
+local function createMobileControlButton(
+	name: string,
+	text: string,
+	position: UDim2,
+	inputName: string
+)
 	local button = Instance.new("TextButton")
 	button.Name = name
 	button.AnchorPoint = Vector2.new(0, 1)
@@ -3226,7 +3247,9 @@ local function averageMs(totalSeconds: number, count: number): number
 end
 
 local function inputDebugFlags(source): string
-	return `{if source.left then "L" else "-"}{if source.right then "R" else "-"}{if source.faster then "F" else "-"}{if source.slower then "S" else "-"}`
+	return `{if source.left then "L" else "-"}{if source.right then "R" else "-"}{if source.faster
+		then "F"
+		else "-"}{if source.slower then "S" else "-"}`
 end
 
 local function racerStateDebugText(label: string, state): string
@@ -3234,13 +3257,17 @@ local function racerStateDebugText(label: string, state): string
 		return `{label}=none`
 	end
 	local mph = 5 * math.round(state.speed.Value / 500)
-	return `{label}=mph:{mph} speed:{math.floor(state.speed.Value + 0.5)} time:{formatTime(state.currentLapTime.Value)} pos:{math.floor(state.position.Value + 0.5)}`
+	return `{label}=mph:{mph} speed:{math.floor(state.speed.Value + 0.5)} time:{formatTime(
+		state.currentLapTime.Value
+	)} pos:{math.floor(state.position.Value + 0.5)}`
 end
 
 local function focusDebugText(): string
 	local focusedTextBox = UserInputService:GetFocusedTextBox()
 	local selectedObject = GuiService.SelectedObject
-	return `focus:{if focusedTextBox then focusedTextBox.Name else "-"} selected:{if selectedObject then selectedObject.Name else "-"}`
+	return `focus:{if focusedTextBox then focusedTextBox.Name else "-"} selected:{if selectedObject
+		then selectedObject.Name
+		else "-"}`
 end
 
 local function hudDebugText(): string
@@ -3270,7 +3297,9 @@ end
 local function activeDebugText(state): string
 	return table.concat({
 		`active={if state then state.id else "none"}`,
-		`keys K:{inputDebugFlags(keyboardInputs)} P:{inputDebugFlags(pointerInputs)} I:{inputDebugFlags(pressedInputs)}`,
+		`keys K:{inputDebugFlags(keyboardInputs)} P:{inputDebugFlags(pointerInputs)} I:{inputDebugFlags(
+			pressedInputs
+		)}`,
 		racerStateDebugText("local", predictedState),
 		racerStateDebugText("server", state),
 		hudDebugText(),

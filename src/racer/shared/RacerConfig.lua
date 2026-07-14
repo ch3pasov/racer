@@ -717,7 +717,11 @@ RacerConfig.V5Junctions = {
 }
 RacerConfig.V5JunctionTrafficBuffer = 8
 
-function RacerConfig.junctionForSegment(mode: string, segmentIndex: number, buffer: number?): string?
+function RacerConfig.junctionForSegment(
+	_mode: string,
+	_segmentIndex: number,
+	_buffer: number?
+): string?
 	return nil
 end
 
@@ -960,7 +964,13 @@ function RacerConfig.trafficSnapshot(
 	for _, car in RacerConfig.Traffic.Cars do
 		local z = RacerMath.increase(car.z, car.speed * trafficTime, trackLength)
 		local segmentIndex = math.floor(z / RacerConfig.SegmentLength) % segmentCount
-		if not RacerConfig.junctionForSegment(mode or "final", segmentIndex, RacerConfig.V5JunctionTrafficBuffer) then
+		if
+			not RacerConfig.junctionForSegment(
+				mode or "final",
+				segmentIndex,
+				RacerConfig.V5JunctionTrafficBuffer
+			)
+		then
 			table.insert(items, {
 				car = car,
 				z = z,
@@ -1098,8 +1108,13 @@ function RacerConfig.advanceTraffic(
 		trafficItems = trafficState.items
 		trafficBySegment = trafficState.bySegment
 	else
-		local rebuiltState =
-			RacerConfig.createTrafficState(trafficTime, trackLength, segmentCount, trafficOffsets, mode)
+		local rebuiltState = RacerConfig.createTrafficState(
+			trafficTime,
+			trackLength,
+			segmentCount,
+			trafficOffsets,
+			mode
+		)
 		trafficItems = rebuiltState.items
 		trafficBySegment = rebuiltState.bySegment
 		if trafficState then
