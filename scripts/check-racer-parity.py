@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import re
+import runpy
 import sys
 import math
 import struct
@@ -19,6 +20,7 @@ TEXTURES = (ROOT / "src/racer/shared/RacerTextures.lua").read_text()
 PUBLISH_SCRIPT = (ROOT / "scripts/publish-place.sh").read_text()
 LOOKUP_SCRIPT = (ROOT / "scripts/lookup-place-version.sh").read_text()
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
+UPLOAD_SCRIPT = (ROOT / "scripts/upload-racer-textures.py").read_text()
 
 
 def fail(message: str):
@@ -49,6 +51,64 @@ if 'git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}"' not in LOOKUP_SCRIPT:
 
 if "python3" not in DOCKERFILE:
     fail("The release image must install Python for publish and verification scripts")
+
+for token in [
+    "operation_id(operation)",
+    'f"{ASSETS_BASE}/assets/{asset_id}"',
+    'DELIVERY_BASE = "https://apis.roblox.com/asset-delivery-api/v1"',
+    "moderationState",
+    "fetch_cdn_png(location)",
+    "delivery_errors_are_transient(errors)",
+    "API_OPENER = urllib.request.build_opener(NoRedirectHandler())",
+    'STATE_PATH = ROOT / "build/racer-texture-upload-state.json"',
+    '"Racer Sprites v3"',
+]:
+    if token not in UPLOAD_SCRIPT:
+        fail(f"Racer texture upload verification is missing: {token}")
+
+upload_runtime = runpy.run_path(
+    str(ROOT / "scripts/upload-racer-textures.py"),
+    run_name="racer_texture_upload_contract",
+)
+try:
+    upload_runtime["parse_png"](
+        (ROOT / "assets/racer/textures/racer-sprites-v3.png").read_bytes(),
+        "Racer atlas",
+        (1024, 1024),
+    )
+except upload_runtime["UploadError"] as error:
+    fail(f"Racer upload validator rejected the production atlas: {error}")
+try:
+    upload_runtime["parse_png"](b"\x89PNG\r\n\x1a\n" + b"\x00" * 25, "truncated PNG")
+except upload_runtime["UploadError"]:
+    pass
+else:
+    fail("Racer upload validator accepted a truncated PNG")
+if upload_runtime["operation_id"]({"path": "operations/id.with.dot"}) != "id.with.dot":
+    fail("Racer upload validator rejected a safe operation path segment")
+if not upload_runtime["delivery_errors_are_transient"]([{"customErrorCode": 18}]):
+    fail("Racer upload validator must retry AssetPendingReview delivery responses")
+if not upload_runtime["delivery_errors_are_transient"]([{"customErrorCode": 13}]):
+    fail("Racer upload validator must retry propagating AssetNotFound delivery responses")
+if upload_runtime["delivery_errors_are_transient"]([{"customErrorCode": 99, "message": "invalid"}]):
+    fail("Racer upload validator must reject terminal delivery responses")
+try:
+    upload_runtime["require_image_asset"](
+        {
+            "assetId": 1,
+            "path": "assets/1",
+            "assetType": "Image",
+            "revisionId": "1",
+            "creationContext": {"creator": {"groupId": 2}},
+        },
+        1,
+        "userId",
+        2,
+    )
+except upload_runtime["UploadError"]:
+    pass
+else:
+    fail("Racer upload validator accepted a conflicting creator kind")
 
 
 def require(pattern: str, text: str, message: str):
