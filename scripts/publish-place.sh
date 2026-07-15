@@ -103,9 +103,9 @@ fi
 git_repo update-ref "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}" ""
 git_repo update-ref -d "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}"
 
-PUBLISH_RESPONSE="$(curl --fail-with-body \
+PUBLISH_RESPONSE="$(env -u ROBLOX_API_KEY curl --fail-with-body \
   --request POST \
-  --header "x-api-key: ${ROBLOX_API_KEY}" \
+  --header @<(builtin printf 'x-api-key: %s\n' "${ROBLOX_API_KEY}") \
   --header "Content-Type: application/xml" \
   --data-binary @"${OUTPUT_FILE}" \
   "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"
