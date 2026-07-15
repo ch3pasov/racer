@@ -2652,12 +2652,23 @@ for token in [
 if "render(fullRenderer, renderState)" not in CLIENT:
     fail("active player renderer must render every frame like javascript-racer")
 
-require(
-    r"predictedState\.fastLapTime\.Value\s*=\s*math\.min\(\s*"
-    r"predictedState\.fastLapTime\.Value,\s*source\.fastLapTime\.Value\s*\)",
+predicted_update_match = re.search(
+    r"local function updatePredictedState\(source, dt: number\)(.*?)"
+    r"\nend\n\nlocal function colorWithFog",
     CLIENT,
-    "active player best lap prediction must not be overwritten by a slower server snapshot",
+    re.MULTILINE | re.DOTALL,
 )
+if not predicted_update_match:
+    fail("active player prediction update must remain inspectable")
+predicted_update = predicted_update_match.group(1)
+require(
+    r"prediction\.fastLapTime\.Value\s*=\s*source\.fastLapTime\.Value\s*"
+    r"return prediction\s*$",
+    predicted_update,
+    "active player fastest lap HUD must use the server-authoritative record",
+)
+if "math.min(predictedState.fastLapTime.Value, source.fastLapTime.Value)" in CLIENT:
+    fail("active player fastest lap must not preserve an unconfirmed local prediction")
 
 if "source.lastLapTime.Value > 0" not in CLIENT or "source.currentLapTime.Value == 0" not in CLIENT:
     fail("active player last lap prediction must survive stale zero server snapshots")

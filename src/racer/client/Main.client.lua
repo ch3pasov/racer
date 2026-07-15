@@ -301,8 +301,6 @@ local function ensurePredictedState(source)
 		return predictedState
 	end
 
-	predictedState.fastLapTime.Value =
-		math.min(predictedState.fastLapTime.Value, source.fastLapTime.Value)
 	if
 		source.lastLapTime.Value > 0
 		or (
@@ -486,6 +484,7 @@ local function updatePredictedState(source, dt: number)
 		steps += 1
 	end
 
+	prediction.fastLapTime.Value = source.fastLapTime.Value
 	return prediction
 end
 
