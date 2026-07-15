@@ -1456,15 +1456,26 @@ require(
     "Racer entry must hydrate the new player's screen state before resetting the run",
 )
 
-for exit_pattern in [
-    r"local function exitScreen\(player: Player, message: string\?\).*?",
-    r"Players\.PlayerRemoving:Connect\(function\(player\).*?",
+exit_screen_match = re.search(
+    r"local function exitScreen\(player: Player, message: string\?\)(.*?)\nend\n\nlocal function rejoinPlace",
+    SERVER,
+    re.DOTALL,
+)
+player_removing_match = re.search(
+    r"Players\.PlayerRemoving:Connect\(function\(player\)(.*?)\nend\)\n\ntask\.spawn",
+    SERVER,
+    re.DOTALL,
+)
+if not exit_screen_match or not player_removing_match:
+    fail("Racer player-state cleanup functions could not be isolated for parity checks")
+for exit_name, exit_body in [
+    ("explicit exit", exit_screen_match.group(1)),
+    ("player removal", player_removing_match.group(1)),
 ]:
     require(
-        exit_pattern
-        + r"session\.activePlayer = nil\s*clearSessionPlayerState\(session\)\s*resetRun\(session\)",
-        SERVER,
-        "Racer exit paths must clear player-owned state before publishing an idle cabinet",
+        r"session\.activePlayer = nil\s*clearSessionPlayerState\(session\)\s*resetRun\(session\)",
+        exit_body,
+        f"Racer {exit_name} must clear player-owned state before publishing an idle cabinet",
     )
 
 for token in [
@@ -1482,6 +1493,26 @@ for token in [
 if SERVER.count("rememberSessionSetting(session, player, settingName, valueObject.Value)") != 2:
     fail("setting changes and resets must both write through to the active player-screen profile")
 
+adjust_setting_match = re.search(
+    r"local function adjustSetting\(player: Player, settingName: string, direction: number\)(.*?)"
+    r"\nend\n\nlocal function resetSettings",
+    SERVER,
+    re.DOTALL,
+)
+reset_settings_match = re.search(
+    r"local function resetSettings\(player: Player\)(.*?)\nend\n\nlocal function runLoop",
+    SERVER,
+    re.DOTALL,
+)
+if not adjust_setting_match or not reset_settings_match:
+    fail("Racer setting mutation functions could not be isolated for parity checks")
+for setting_action, setting_body in [
+    ("adjust", adjust_setting_match.group(1)),
+    ("reset", reset_settings_match.group(1)),
+]:
+    if "rememberSessionSetting(session, player, settingName, valueObject.Value)" not in setting_body:
+        fail(f"Racer setting {setting_action} must write through inside its own function")
+
 require(
     r"local function hydrateSessionPlayerState\(session, player: Player\)\s*"
     r"local profile = playerScreenProfile\(player, session\.definition\.Id\)\s*"
@@ -1498,6 +1529,13 @@ require(
     r"valueObject\.Value = setting\.default",
     SERVER,
     "idle Racer cabinets must not retain the prior player's renderer settings",
+)
+
+require(
+    r"if session\.lastLapTime <= session\.fastLapTime then\s*"
+    r"session\.fastLapTime = session\.lastLapTime\s*rememberSessionFastLap\(session\)\s*end",
+    SERVER,
+    "a new fastest lap must write through inside its own completion branch",
 )
 
 for token in [
