@@ -1163,21 +1163,15 @@ local function updateRacer(session, dt: number)
 		)
 	end
 
-	if RacerConfig.isFinalLike(session.definition.Mode) then
-		local completedLap = session.lapStarted
-			and startPosition > trackLength - RacerConfig.SegmentLength * 2
-			and session.position < playerZ
-		if completedLap then
-			session.currentLapTime += dt
+	if RacerConfig.isFinalLike(session.definition.Mode) and session.position > playerZ then
+		if session.lapStarted and startPosition < playerZ then
 			session.lastLapTime = session.currentLapTime
 			session.currentLapTime = 0
 			if session.lastLapTime <= session.fastLapTime then
 				session.fastLapTime = session.lastLapTime
 			end
 			recordLapForRecordBoards(session, session.activePlayer, session.lastLapTime)
-		elseif session.lapStarted then
-			session.currentLapTime += dt
-		elseif session.position > playerZ then
+		else
 			session.lapStarted = true
 			session.currentLapTime += dt
 		end

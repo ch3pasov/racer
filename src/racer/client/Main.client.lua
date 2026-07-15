@@ -457,20 +457,14 @@ local function updatePredictedState(source, dt: number)
 			)
 		end
 
-		if RacerConfig.isFinalLike(mode) then
-			local completedLap = prediction.lapStarted
-				and startPosition > trackLength - RacerConfig.SegmentLength * 2
-				and prediction.position.Value < playerZ
-			if completedLap then
-				prediction.currentLapTime.Value += step
+		if RacerConfig.isFinalLike(mode) and prediction.position.Value > playerZ then
+			if prediction.lapStarted and startPosition < playerZ then
 				prediction.lastLapTime.Value = prediction.currentLapTime.Value
 				prediction.currentLapTime.Value = 0
 				if prediction.lastLapTime.Value <= prediction.fastLapTime.Value then
 					prediction.fastLapTime.Value = prediction.lastLapTime.Value
 				end
-			elseif prediction.lapStarted then
-				prediction.currentLapTime.Value += step
-			elseif prediction.position.Value > playerZ then
+			else
 				prediction.lapStarted = true
 				prediction.currentLapTime.Value += step
 			end
