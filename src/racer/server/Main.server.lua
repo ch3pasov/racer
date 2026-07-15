@@ -382,7 +382,6 @@ local function createSession(definition)
 		currentLapTime = 0,
 		lastLapTime = 0,
 		fastLapTime = DEFAULT_FAST_LAP_TIME,
-		lapStarted = false,
 		playerX = 0,
 		steer = 0,
 		skyOffset = 0,
@@ -487,7 +486,6 @@ local function resetRun(session)
 	session.trafficTime = 0
 	session.currentLapTime = 0
 	session.lastLapTime = 0
-	session.lapStarted = false
 	session.playerX = 0
 	session.steer = 0
 	session.skyOffset = 0
@@ -1225,7 +1223,7 @@ local function updateRacer(session, dt: number)
 	end
 
 	if RacerConfig.isFinalLike(session.definition.Mode) and session.position > playerZ then
-		if session.lapStarted and startPosition < playerZ then
+		if session.currentLapTime > 0 and startPosition < playerZ then
 			session.lastLapTime = session.currentLapTime
 			session.currentLapTime = 0
 			if session.lastLapTime <= session.fastLapTime then
@@ -1234,7 +1232,6 @@ local function updateRacer(session, dt: number)
 			end
 			recordLapForRecordBoards(session, session.activePlayer, session.lastLapTime)
 		else
-			session.lapStarted = true
 			session.currentLapTime += dt
 		end
 	end

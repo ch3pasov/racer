@@ -262,7 +262,6 @@ local function copyPredictedState(source)
 		currentLapTime = valueProxy(source.currentLapTime.Value),
 		lastLapTime = valueProxy(source.lastLapTime.Value),
 		fastLapTime = valueProxy(source.fastLapTime.Value),
-		lapStarted = source.currentLapTime.Value > 0,
 		playerX = valueProxy(source.playerX.Value),
 		steer = valueProxy(source.steer.Value),
 		skyOffset = valueProxy(source.skyOffset.Value),
@@ -464,14 +463,13 @@ local function updatePredictedState(source, dt: number)
 		end
 
 		if RacerConfig.isFinalLike(mode) and prediction.position.Value > playerZ then
-			if prediction.lapStarted and startPosition < playerZ then
+			if prediction.currentLapTime.Value > 0 and startPosition < playerZ then
 				prediction.lastLapTime.Value = prediction.currentLapTime.Value
 				prediction.currentLapTime.Value = 0
 				if prediction.lastLapTime.Value <= prediction.fastLapTime.Value then
 					prediction.fastLapTime.Value = prediction.lastLapTime.Value
 				end
 			else
-				prediction.lapStarted = true
 				prediction.currentLapTime.Value += step
 			end
 		end

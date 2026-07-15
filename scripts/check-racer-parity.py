@@ -1404,20 +1404,20 @@ require(
 
 require(
     r"if RacerConfig\.isFinalLike\(mode\) and prediction\.position\.Value > playerZ then\s*"
-    r"if prediction\.lapStarted and startPosition < playerZ then\s*"
+    r"if prediction\.currentLapTime\.Value > 0 and startPosition < playerZ then\s*"
     r"prediction\.lastLapTime\.Value = prediction\.currentLapTime\.Value\s*"
     r"prediction\.currentLapTime\.Value = 0.*?else\s*"
-    r"prediction\.lapStarted = true\s*prediction\.currentLapTime\.Value \+= step\s*end\s*end",
+    r"prediction\.currentLapTime\.Value \+= step\s*end\s*end",
     CLIENT,
     "v4+ client lap timing must complete at the original player line after track wrap",
 )
 
 require(
     r"if RacerConfig\.isFinalLike\(session\.definition\.Mode\) and session\.position > playerZ then\s*"
-    r"if session\.lapStarted and startPosition < playerZ then\s*"
+    r"if session\.currentLapTime > 0 and startPosition < playerZ then\s*"
     r"session\.lastLapTime = session\.currentLapTime\s*session\.currentLapTime = 0.*?"
     r"recordLapForRecordBoards\(session, session\.activePlayer, session\.lastLapTime\)\s*else\s*"
-    r"session\.lapStarted = true\s*session\.currentLapTime \+= dt\s*end\s*end",
+    r"session\.currentLapTime \+= dt\s*end\s*end",
     SERVER,
     "v4+ server lap timing must complete and persist at the original player line after track wrap",
 )
@@ -1425,6 +1425,8 @@ require(
 for lap_source in [CLIENT, SERVER]:
     if "startPosition > trackLength - RacerConfig.SegmentLength * 2" in lap_source:
         fail("v4+ lap timing must not complete early at the raw track-coordinate wrap")
+    if "lapStarted" in lap_source:
+        fail("v4+ lap timing must use the original nonzero current-lap guard, not a sticky flag")
 
 for token in [
     "local DEFAULT_FAST_LAP_TIME = 180",
