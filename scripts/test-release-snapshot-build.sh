@@ -76,6 +76,68 @@ if ! grep -q "PublishedAt = &quot;${FIXED_PUBLISHED_AT}&quot;" "${FIRST_BUILD}" 
   exit 1
 fi
 
+printf '\n-- Replacement-ref gameplay mutation.\n' >> "${TEST_REPO}/src/racer/shared/RacerConfig.lua"
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" add src/racer/shared/RacerConfig.lua
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" commit --quiet -m "replacement tree"
+REPLACEMENT_COMMIT="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" rev-parse HEAD)"
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" reset --hard --quiet "${GIT_COMMIT}"
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" replace "${GIT_COMMIT}" "${REPLACEMENT_COMMIT}"
+set +e
+REPLACE_OUTPUT="$("${HELPER}" \
+  "${GIT_COMMIT}" \
+  "${FIXED_PUBLISHED_AT}" \
+  "${LOBBY_PLACE_ID}" \
+  "${RACER_PLACE_ID}" \
+  "${TEMP_ROOT}/replace.rbxlx" 2>&1)"
+REPLACE_STATUS="$?"
+set -e
+if [[ "${REPLACE_STATUS}" -eq 0 \
+  || "${REPLACE_OUTPUT}" != *"must not contain Git replacement refs"* \
+  || -e "${TEMP_ROOT}/replace.rbxlx" ]]; then
+  echo "Release helper did not fail closed on a replacement commit." >&2
+  exit 1
+fi
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" replace -d "${GIT_COMMIT}" >/dev/null
+
+INFO_ATTRIBUTES="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" rev-parse --git-path info/attributes)"
+if [[ "${INFO_ATTRIBUTES}" != /* ]]; then
+  INFO_ATTRIBUTES="${TEST_REPO}/${INFO_ATTRIBUTES}"
+fi
+mkdir -p "$(dirname -- "${INFO_ATTRIBUTES}")"
+printf 'src/racer/** export-ignore\n' > "${INFO_ATTRIBUTES}"
+set +e
+INFO_ATTRIBUTES_OUTPUT="$("${HELPER}" \
+  "${GIT_COMMIT}" \
+  "${FIXED_PUBLISHED_AT}" \
+  "${LOBBY_PLACE_ID}" \
+  "${RACER_PLACE_ID}" \
+  "${TEMP_ROOT}/info-attributes.rbxlx" 2>&1)"
+INFO_ATTRIBUTES_STATUS="$?"
+set -e
+if [[ "${INFO_ATTRIBUTES_STATUS}" -eq 0 \
+  || "${INFO_ATTRIBUTES_OUTPUT}" != *"must not contain info/attributes"* \
+  || -e "${TEMP_ROOT}/info-attributes.rbxlx" ]]; then
+  echo "Release helper did not fail closed on repository-private archive attributes." >&2
+  exit 1
+fi
+rm "${INFO_ATTRIBUTES}"
+
+ATTRIBUTE_POISON="${TEMP_ROOT}/attribute-poison"
+printf 'src/racer/** export-ignore\n' > "${ATTRIBUTE_POISON}"
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" config core.attributesFile "${ATTRIBUTE_POISON}"
+ATTRIBUTE_BUILD="${TEMP_ROOT}/attribute-config.rbxlx"
+"${HELPER}" \
+  "${GIT_COMMIT}" \
+  "${FIXED_PUBLISHED_AT}" \
+  "${LOBBY_PLACE_ID}" \
+  "${RACER_PLACE_ID}" \
+  "${ATTRIBUTE_BUILD}" >/dev/null
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" config --unset core.attributesFile
+if ! cmp -s "${FIRST_BUILD}" "${ATTRIBUTE_BUILD}"; then
+  echo "Repository core.attributesFile changed the isolated release archive." >&2
+  exit 1
+fi
+
 printf '\n-- Uncommitted integration-test mutation.\n' >> "${TEST_REPO}/src/racer/shared/RacerConfig.lua"
 printf 'unexpected\tmanifest\trow\n' >> "${TEST_REPO}/scripts/racer-release-toolchain.tsv"
 "${HELPER}" \
@@ -107,6 +169,51 @@ fi
 git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" restore \
   scripts/racer-release-toolchain.tsv \
   src/racer/shared/RacerConfig.lua
+
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" update-index --assume-unchanged \
+  scripts/publish-place.sh
+printf '\n# Hidden publisher mutation.\n' >> "${TEST_REPO}/scripts/publish-place.sh"
+if [[ -n "$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" status --porcelain=v1)" ]]; then
+  echo "Assume-unchanged publisher fixture was not hidden from ordinary status." >&2
+  exit 1
+fi
+set +e
+HIDDEN_PUBLISHER_OUTPUT="$(ROBLOX_RACER_PLACE_ID="${RACER_PLACE_ID}" \
+  ROBLOX_LOBBY_PLACE_ID="${LOBBY_PLACE_ID}" \
+  "${PUBLISHER}" --build-only 2>&1)"
+HIDDEN_PUBLISHER_STATUS="$?"
+set -e
+if [[ "${HIDDEN_PUBLISHER_STATUS}" -eq 0 \
+  || "${HIDDEN_PUBLISHER_OUTPUT}" != *"hidden-state inspection failed"* ]]; then
+  echo "Top-level publisher accepted its assume-unchanged live mutation." >&2
+  exit 1
+fi
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" update-index --no-assume-unchanged \
+  scripts/publish-place.sh
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" restore scripts/publish-place.sh
+
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" update-index --skip-worktree \
+  scripts/racer-publish-state.py
+printf '\n# Hidden state-helper mutation.\n' >> "${TEST_REPO}/scripts/racer-publish-state.py"
+if [[ -n "$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" status --porcelain=v1)" ]]; then
+  echo "Skip-worktree state-helper fixture was not hidden from ordinary status." >&2
+  exit 1
+fi
+set +e
+HIDDEN_STATE_OUTPUT="$(ROBLOX_RACER_PLACE_ID="${RACER_PLACE_ID}" \
+  ROBLOX_LOBBY_PLACE_ID="${LOBBY_PLACE_ID}" \
+  "${PUBLISHER}" --build-only 2>&1)"
+HIDDEN_STATE_STATUS="$?"
+set -e
+if [[ "${HIDDEN_STATE_STATUS}" -eq 0 \
+  || "${HIDDEN_STATE_OUTPUT}" != *"hidden-state inspection failed"* ]]; then
+  echo "Top-level publisher accepted a skip-worktree state helper." >&2
+  exit 1
+fi
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" update-index --no-skip-worktree \
+  scripts/racer-publish-state.py
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" restore scripts/racer-publish-state.py
+
 BUILD_INFO_BEFORE="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedBuildInfo.lua)"
 PLACE_IDS_BEFORE="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedPlaceIds.lua)"
 ROBLOX_RACER_PLACE_ID="${RACER_PLACE_ID}" \

@@ -65,6 +65,9 @@ for token in [
     'if [[ "$#" -eq 0 ]]',
     'elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
+    "require_no_hidden_index_entries",
+    "require_release_helpers_match_head",
+    "require_release_git_metadata",
     'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
     'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
     'PENDING_REF="refs/racer-publish/pending"',
@@ -124,7 +127,9 @@ crlf_check_index = PUBLISH_SCRIPT.index(
     '"${RACER_PUBLISH_API_KEY}" == *$\'\\r\'*', capture_key_index
 )
 script_dir_index = PUBLISH_SCRIPT.index('SCRIPT_PARENT="$(')
-preflight_index = PUBLISH_SCRIPT.index("EARLY_TREE_STATUS=")
+preflight_index = PUBLISH_SCRIPT.index(
+    'if [[ "${RELEASE_PHASE}" == "initial" ]]; then\n  require_clean_tree'
+)
 secret_pipe_index = PUBLISH_SCRIPT.index("exec 9< <(")
 lock_exec_index = PUBLISH_SCRIPT.index('/usr/bin/python3 -I "${STATE_HELPER}" "${LOCK_ARGUMENTS[@]}"')
 lock_assert_index = PUBLISH_SCRIPT.index('assert-release-lock; then', lock_exec_index)
@@ -295,7 +300,10 @@ for token in [
     '/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C',
     'GIT_CONFIG_NOSYSTEM=1',
     'GIT_CONFIG_GLOBAL=/dev/null',
-    '/usr/bin/git -c safe.directory="${ROOT_DIR}"',
+    'GIT_ATTR_NOSYSTEM=1',
+    'GIT_NO_REPLACE_OBJECTS=1',
+    '-c core.attributesFile=/dev/null',
+    'require_release_repository_integrity',
     'git_repo archive --format=tar --output="${ARCHIVE_FILE}" "${GIT_COMMIT}"',
     '/usr/bin/tar -xf "${ARCHIVE_FILE}" -C "${SNAPSHOT_DIR}"',
     'load_toolchain_manifest "${TOOLCHAIN_MANIFEST}"',
@@ -399,6 +407,11 @@ for token in [
     "Release helper did not reject an authenticated Rojo with the wrong version.",
     "Release helper did not reject extra toolchain manifest fields.",
     "Release helper did not reject a snapshot toolchain manifest symlink.",
+    "Release helper did not fail closed on a replacement commit.",
+    "Release helper did not fail closed on repository-private archive attributes.",
+    "Repository core.attributesFile changed the isolated release archive.",
+    "Top-level publisher accepted its assume-unchanged live mutation.",
+    "Top-level publisher accepted a skip-worktree state helper.",
     'PERL5OPT="-MRacerToolchainPoisonMustNotLoad"',
     'scripts/test-fixtures/release-toolchain',
 ]:
@@ -429,6 +442,9 @@ for token in [
     'probe_inherited_release_lock(common_descriptor, common_metadata)',
     'validate_just_acquired_release_lock()',
     '"worktree",\n                "list",\n                "--porcelain",\n                "-z"',
+    '"GIT_ATTR_NOSYSTEM": "1"',
+    '"GIT_NO_REPLACE_OBJECTS": "1"',
+    '"core.attributesFile=/dev/null"',
     'only the Git common-directory owner may create the',
     'close_unexpected_descriptors(secret=secret)',
     'for directory in ("/dev/fd", "/proc/self/fd")',
@@ -462,6 +478,7 @@ for token in [
     'test_reproducible_artifact_integrity(parent)',
     'test_conflict_and_crash_resume(parent)',
     'test_symbolic_publish_tag_guards(parent)',
+    'test_hidden_release_helper_guards(parent)',
     'test_lookup_failure_resume(parent)',
     'test_recovery_ref_reachability(parent)',
     'test_recovery_ref_crash_resume(parent)',
@@ -628,8 +645,22 @@ for forbidden in [
     if forbidden in FINALIZE_SCRIPT:
         fail(f"Studio publish finalizer must not contain: {forbidden}")
 
-if 'git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}"' not in LOOKUP_SCRIPT:
-    fail("PlaceVersion lookup must support the release container's mounted git repository")
+for source_name, source in [
+    ("publisher", PUBLISH_SCRIPT),
+    ("snapshot builder", RELEASE_BUILD_SCRIPT),
+    ("Studio finalizer", FINALIZE_SCRIPT),
+    ("PlaceVersion lookup", LOOKUP_SCRIPT),
+]:
+    for token in [
+        "GIT_ATTR_NOSYSTEM=1",
+        "GIT_NO_REPLACE_OBJECTS=1",
+        "-c core.attributesFile=/dev/null",
+        "require_no_hidden_index_entries",
+        "require_release_helpers_match_head",
+        "require_release_git_metadata",
+    ]:
+        if token not in source:
+            fail(f"{source_name} release Git isolation is missing: {token}")
 
 if "python3" not in DOCKERFILE:
     fail("The release image must install Python for publish and verification scripts")

@@ -688,6 +688,49 @@ def test_symbolic_publish_tag_guards(parent: Path) -> None:
     )
 
 
+def test_hidden_release_helper_guards(parent: Path) -> None:
+    cases = (
+        (
+            "assume-hidden-builder",
+            "--assume-unchanged",
+            "scripts/build-racer-release.sh",
+            "700134",
+        ),
+        (
+            "skip-hidden-finalizer",
+            "--skip-worktree",
+            "scripts/finalize-studio-publish.sh",
+            "700135",
+        ),
+        (
+            "skip-hidden-lookup",
+            "--skip-worktree",
+            "scripts/lookup-place-version.sh",
+            "700136",
+        ),
+    )
+    for name, index_flag, relative_path, version in cases:
+        fixture = Fixture(parent, name)
+        require_success(fixture.build_only(), f"{name} build-only")
+        artifact_before = fixture.artifact.read_bytes()
+        git(fixture.repo, "update-index", index_flag, relative_path)
+        helper_path = fixture.repo / relative_path
+        helper_path.write_text(helper_path.read_text() + "\n# Hidden release-helper mutation.\n")
+        if git(fixture.repo, "status", "--porcelain=v1", capture=True):
+            raise RuntimeError(f"{name} mutation was not hidden from ordinary status")
+        result = fixture.finalize(version)
+        require_failure(result, name)
+        state = fixture.load_state()
+        if state["state"] != "prepared" or state["placeVersion"] is not None:
+            raise RuntimeError(f"{name} changed pending publish state")
+        if (
+            fixture.pending_ref_commit() != fixture.release_commit
+            or fixture.tag_exists(version)
+            or fixture.artifact.read_bytes() != artifact_before
+        ):
+            raise RuntimeError(f"{name} changed artifact, recovery ref, or publish tag")
+
+
 def test_lookup_failure_resume(parent: Path) -> None:
     fixture = Fixture(parent, "lookup-failure", broken_lookup=True)
     version = "700140"
@@ -1020,6 +1063,7 @@ def main() -> None:
         test_reproducible_artifact_integrity(parent)
         test_conflict_and_crash_resume(parent)
         test_symbolic_publish_tag_guards(parent)
+        test_hidden_release_helper_guards(parent)
         test_lookup_failure_resume(parent)
         test_recovery_ref_reachability(parent)
         test_recovery_ref_crash_resume(parent)

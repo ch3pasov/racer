@@ -79,8 +79,10 @@ def descriptor_is_open(descriptor: int) -> bool:
 
 def reject_legacy_release_lock() -> None:
     environment = {
+        "GIT_ATTR_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
         "HOME": "/",
         "LANG": "C",
         "LC_ALL": "C",
@@ -94,6 +96,8 @@ def reject_legacy_release_lock() -> None:
                 "/usr/bin/git",
                 "-c",
                 f"safe.directory={ROOT}",
+                "-c",
+                "core.attributesFile=/dev/null",
                 "-C",
                 str(ROOT),
                 "worktree",
@@ -142,8 +146,10 @@ def reject_legacy_release_lock() -> None:
 
 def git_common_dir() -> Path:
     environment = {
+        "GIT_ATTR_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
         "HOME": "/",
         "LANG": "C",
         "LC_ALL": "C",
@@ -157,6 +163,8 @@ def git_common_dir() -> Path:
                 "/usr/bin/git",
                 "-c",
                 f"safe.directory={ROOT}",
+                "-c",
+                "core.attributesFile=/dev/null",
                 "-C",
                 str(ROOT),
                 "rev-parse",
