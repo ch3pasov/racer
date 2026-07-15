@@ -8,6 +8,10 @@ cd "${ROOT_DIR}"
 OUTPUT_LABEL="build/racer.rbxlx"
 OUTPUT_FILE="${ROOT_DIR}/${OUTPUT_LABEL}"
 BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"
+STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"
+FINALIZER="${SCRIPT_DIR}/finalize-studio-publish.sh"
+PENDING_LABEL="build/racer-publish-pending.json"
+RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"
 
 git_repo() {
   git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
@@ -29,6 +33,28 @@ require_clean_tree() {
     exit 1
   fi
 }
+
+TEMP_ROOT=""
+INSTALL_TEMP=""
+RELEASE_LOCK_HELD="false"
+
+release_publish_lock() {
+  if [[ "${RELEASE_LOCK_HELD}" == "true" ]]; then
+    rmdir "${RELEASE_LOCK_DIR}"
+    RELEASE_LOCK_HELD="false"
+  fi
+}
+
+cleanup() {
+  if [[ -n "${INSTALL_TEMP}" ]]; then
+    rm -f "${INSTALL_TEMP}"
+  fi
+  if [[ -n "${TEMP_ROOT}" ]]; then
+    rm -rf "${TEMP_ROOT}"
+  fi
+  release_publish_lock
+}
+trap cleanup EXIT
 
 BUILD_ONLY="false"
 if [[ "$#" -eq 0 ]]; then
@@ -58,6 +84,25 @@ if [[ ! -x "${BUILD_HELPER}" ]]; then
   echo "Release snapshot builder is missing or not executable: ${BUILD_HELPER}" >&2
   exit 1
 fi
+if [[ ! -x "${STATE_HELPER}" ]]; then
+  echo "Pending publish state helper is missing or not executable: ${STATE_HELPER}" >&2
+  exit 1
+fi
+if [[ ! -x "${FINALIZER}" ]]; then
+  echo "Publish finalizer is missing or not executable: ${FINALIZER}" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname -- "${RELEASE_LOCK_DIR}")"
+if ! mkdir "${RELEASE_LOCK_DIR}"; then
+  echo "Another Racer release operation holds ${RELEASE_LOCK_DIR#"${ROOT_DIR}/"}." >&2
+  echo "If no release process is running, inspect pending state before removing a stale lock." >&2
+  exit 1
+fi
+RELEASE_LOCK_HELD="true"
+
+# Any state file, including a corrupt one, blocks before the artifact can be rebuilt.
+"${STATE_HELPER}" assert-absent
 
 require_clean_tree
 
@@ -66,15 +111,6 @@ GIT_COMMIT_SHORT="$(git_repo rev-parse --short=12 HEAD)"
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/racer-publish.XXXXXX")"
 PRIVATE_ARTIFACT="${TEMP_ROOT}/racer.rbxlx"
-INSTALL_TEMP=""
-
-cleanup() {
-  if [[ -n "${INSTALL_TEMP}" ]]; then
-    rm -f "${INSTALL_TEMP}"
-  fi
-  rm -rf "${TEMP_ROOT}"
-}
-trap cleanup EXIT
 
 "${BUILD_HELPER}" \
   "${GIT_COMMIT}" \
@@ -110,13 +146,50 @@ atomic_install_artifact() {
   fi
 }
 
+require_installed_artifact() {
+  if [[ ! -f "${OUTPUT_FILE}" || -L "${OUTPUT_FILE}" ]]; then
+    echo "Installed Racer release artifact is missing or is not a regular file." >&2
+    exit 1
+  fi
+  if [[ "$(sha256_file "${OUTPUT_FILE}")" != "${BUILD_SHA256}" ]]; then
+    echo "Installed Racer release artifact changed after it was built." >&2
+    exit 1
+  fi
+}
+
+create_pending_state() {
+  local mode="$1"
+  local manifest_sha
+  local -a arguments
+  arguments=(
+    create
+    --mode "${mode}"
+    --git-commit "${GIT_COMMIT}"
+    --git-commit-short "${GIT_COMMIT_SHORT}"
+    --published-at "${PUBLISHED_AT}"
+    --racer-place-id "${PLACE_ID}"
+    --lobby-place-id "${LOBBY_PLACE_ID}"
+  )
+  if [[ "${mode}" == "open-cloud" ]]; then
+    arguments+=(--universe-id "${ROBLOX_UNIVERSE_ID}")
+  fi
+  manifest_sha="$("${STATE_HELPER}" "${arguments[@]}")"
+  if [[ "${manifest_sha}" != "${BUILD_SHA256}" ]]; then
+    echo "Pending publish state recorded an unexpected artifact SHA-256." >&2
+    exit 1
+  fi
+}
+
 require_release_state
 atomic_install_artifact
+require_installed_artifact
 
 if [[ "${BUILD_ONLY}" == "true" ]]; then
+  create_pending_state "studio"
   echo "Built ${OUTPUT_LABEL} for Racer place ${PLACE_ID}"
   echo "Commit: ${GIT_COMMIT}"
   echo "SHA-256: ${BUILD_SHA256}"
+  echo "Pending Studio publish: ${PENDING_LABEL}"
   exit 0
 fi
 
@@ -136,13 +209,26 @@ git_repo update-ref "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}" ""
 git_repo update-ref -d "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}"
 
 require_release_state
+require_installed_artifact
+create_pending_state "open-cloud"
 
-PUBLISH_RESPONSE="$(env -u ROBLOX_API_KEY curl --fail-with-body \
-  --request POST \
-  --header @<(builtin printf 'x-api-key: %s\n' "${ROBLOX_API_KEY}") \
-  --header "Content-Type: application/xml" \
-  --data-binary @"${PRIVATE_ARTIFACT}" \
-  "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"
+# The POST must still match both the private snapshot and the durable manifest.
+require_release_state
+require_installed_artifact
+if [[ "$("${STATE_HELPER}" validate-artifact)" != "${BUILD_SHA256}" ]]; then
+  echo "Pending publish state no longer matches the Racer release artifact." >&2
+  exit 1
+fi
+
+if ! PUBLISH_RESPONSE="$(env -u ROBLOX_API_KEY curl --fail-with-body \
+    --request POST \
+    --header @<(builtin printf 'x-api-key: %s\n' "${ROBLOX_API_KEY}") \
+    --header "Content-Type: application/xml" \
+    --data-binary @"${PRIVATE_ARTIFACT}" \
+    "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"; then
+  echo "Roblox publish request failed; ${PENDING_LABEL} was retained for recovery." >&2
+  exit 1
+fi
 
 if ! PLACE_VERSION="$(PUBLISH_RESPONSE="${PUBLISH_RESPONSE}" python3 -c 'import json
 import os
@@ -160,28 +246,20 @@ if not isinstance(version, int) or isinstance(version, bool) or version <= 0:
     raise SystemExit(1)
 print(version)')"; then
   echo "Published response did not include a valid place version." >&2
+  echo "${PENDING_LABEL} was retained; do not retry the publish request." >&2
   exit 1
 fi
 
-TAG="racer-place-v${PLACE_VERSION}"
-if git_repo rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null; then
-  echo "Refusing to move existing immutable publish tag ${TAG}." >&2
-  exit 1
-fi
-git_repo tag "${TAG}" "${GIT_COMMIT}"
+# Persist the accepted PlaceVersion before any tag or other finalization work.
+"${STATE_HELPER}" record-version "${PLACE_VERSION}" \
+  --git-commit "${GIT_COMMIT}" \
+  --artifact-sha256 "${BUILD_SHA256}"
 
-TAG_COMMIT="$(git_repo rev-parse "refs/tags/${TAG}^{commit}")"
-if [[ "${TAG_COMMIT}" != "${GIT_COMMIT}" ]]; then
-  echo "Publish tag ${TAG} did not resolve to the published commit ${GIT_COMMIT}." >&2
+# The finalizer takes the same release lock and is the single tag/lookup/clear path.
+release_publish_lock
+if ! env -u ROBLOX_API_KEY "${FINALIZER}" "${PLACE_VERSION}"; then
+  echo "PlaceVersion ${PLACE_VERSION} was published but ${PENDING_LABEL} remains pending." >&2
   exit 1
 fi
-
-LOOKUP_OUTPUT="$("${SCRIPT_DIR}/lookup-place-version.sh" "${PLACE_VERSION}")"
-if [[ "${LOOKUP_OUTPUT}" != *"Commit: ${GIT_COMMIT}"* ]]; then
-  echo "PlaceVersion lookup did not resolve ${PLACE_VERSION} to ${GIT_COMMIT}." >&2
-  exit 1
-fi
-printf '%s\n' "${LOOKUP_OUTPUT}"
-echo "Tagged ${TAG} -> ${GIT_COMMIT_SHORT}"
 
 echo "Published Racer Lab place ${PLACE_ID} in universe ${ROBLOX_UNIVERSE_ID}"

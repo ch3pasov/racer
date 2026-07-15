@@ -16,6 +16,7 @@ TEST_VERSION = "424242"
 FAKE_ROJO = r'''#!/usr/bin/env python3
 from pathlib import Path
 import sys
+from xml.sax.saxutils import escape
 
 
 if sys.argv[1:] == ["--version"]:
@@ -33,10 +34,25 @@ if output_index >= len(sys.argv):
 
 output = Path(sys.argv[output_index])
 output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text('<roblox version="4"></roblox>\n')
+build_info = Path("src/shared/GeneratedBuildInfo.lua").read_text()
+place_ids = Path("src/shared/GeneratedPlaceIds.lua").read_text()
+output.write_text(
+    '<roblox version="4">'
+    '<Item class="ModuleScript"><Properties>'
+    '<string name="Name">GeneratedBuildInfo</string>'
+    f'<ProtectedString name="Source">{escape(build_info)}</ProtectedString>'
+    '</Properties></Item>'
+    '<Item class="ModuleScript"><Properties>'
+    '<string name="Name">GeneratedPlaceIds</string>'
+    f'<ProtectedString name="Source">{escape(place_ids)}</ProtectedString>'
+    '</Properties></Item>'
+    '</roblox>\n'
+)
 '''
 
 FAKE_CURL = r'''#!/usr/bin/env python3
+import hashlib
+import json
 import os
 from pathlib import Path
 import sys
@@ -54,6 +70,20 @@ if any(expected in argument for argument in sys.argv):
     fail("API key reached curl argv")
 if "ROBLOX_API_KEY" in os.environ:
     fail("API key remained in the curl environment")
+
+state_path = Path("build/racer-publish-pending.json")
+if not state_path.is_file():
+    fail("pending publish state was not durable before curl")
+state = json.loads(state_path.read_text())
+if state.get("mode") != "open-cloud" or state.get("state") != "prepared":
+    fail("pending publish state was not PREPARED before curl")
+if state.get("placeVersion") is not None:
+    fail("pending publish state recorded a version before the response")
+artifact = Path(state["artifact"]["path"])
+if hashlib.sha256(artifact.read_bytes()).hexdigest() != state["artifact"]["sha256"]:
+    fail("pending artifact hash was incorrect before curl")
+if expected.encode() in state_path.read_bytes():
+    fail("pending publish state contained the API key")
 
 headers = []
 for index, argument in enumerate(sys.argv):
@@ -114,8 +144,10 @@ def main() -> None:
             ".gitignore",
             "racer.project.json",
             "scripts/build-racer-release.sh",
+            "scripts/finalize-studio-publish.sh",
             "scripts/lookup-place-version.sh",
             "scripts/publish-place.sh",
+            "scripts/racer-publish-state.py",
             "src/shared/GeneratedBuildInfo.lua",
             "src/shared/GeneratedPlaceIds.lua",
         ):
@@ -176,6 +208,8 @@ def main() -> None:
         ).strip()
         if tag_commit != head_commit:
             raise RuntimeError("fake publish tag did not resolve to the fixture commit")
+        if (repo / "build/racer-publish-pending.json").exists():
+            raise RuntimeError("successful publish did not clear pending state")
 
         if (repo / "src/shared/GeneratedBuildInfo.lua").read_bytes() != original_build_info:
             raise RuntimeError("publish test did not restore GeneratedBuildInfo.lua")

@@ -17,6 +17,8 @@ repositories.
   immutable git snapshot with the pinned Rojo version.
 - `scripts/publish-place.sh` builds and publishes Racer Lab through Roblox Open
   Cloud.
+- `scripts/racer-publish-state.py` preserves the exact artifact and release
+  identity across uncertain publish outcomes.
 - `scripts/test-release-snapshot-build.sh` verifies release-build determinism,
   worktree isolation, dirty-tree refusal, and the Rojo version pin.
 - `scripts/finalize-studio-publish.sh` safely records the immutable git mapping
@@ -74,6 +76,7 @@ Studio.
 docker compose run --rm roblox bash
 python3 scripts/check-racer-parity.py
 scripts/test-release-snapshot-build.sh
+python3 scripts/test-publish-recovery.py
 scripts/publish-place.sh --build-only
 scripts/publish-place.sh
 ```
@@ -85,6 +88,13 @@ For example, `scripts/lookup-place-version.sh 153` shows the commit published as
 Roblox place version 153. Release builds require the repository-pinned Rojo
 7.5.1; a direct `rojo build` remains suitable for development checks but is not
 the traceable release path.
+
+Every release handoff creates the ignored, non-secret
+`build/racer-publish-pending.json` before Roblox can receive the artifact. While
+that record exists, another build or publish is refused, so an uncertain network
+result cannot create an untracked second PlaceVersion or overwrite the artifact.
+Do not delete or edit it after a failed request. Recover the accepted version in
+Studio or publish the exact recorded artifact there, then run the finalizer.
 
 ## Building For a Studio Fallback
 
@@ -99,8 +109,11 @@ scripts/publish-place.sh --build-only
 The command captures `HEAD`, exports that commit with `git archive`, writes
 release metadata only inside the private snapshot, and atomically installs the
 result as `build/racer.rbxlx`. Live tracked generated files are never changed.
-It prints the artifact's full commit and SHA-256 for Studio version notes.
-Publish that exact file through Studio before finalizing its mapping.
+It prints the artifact's full commit and SHA-256 for Studio version notes and
+atomically creates a pending Studio handoff. It does not require or read an API
+key or universe id and performs no network request. Publish that exact file
+through Studio before finalizing its mapping. A second build is intentionally
+blocked until this handoff is finalized.
 
 ## Finalizing a Studio Publish
 
@@ -113,6 +126,10 @@ export ROBLOX_RACER_PLACE_ID="..."
 scripts/finalize-studio-publish.sh <verified-place-version>
 ```
 
-The finalizer performs no network operation and never moves an existing release
-tag. It validates that `build/racer.rbxlx` embeds the current commit and the
-expected Racer place before atomically creating the version tag.
+The finalizer performs no network operation, does not need an API key, and never
+moves an existing release tag. It consumes the pending record, validates the
+artifact SHA-256, size, embedded commit, timestamp, Racer place, and lobby place,
+then records the version before atomically creating its tag. It can recover an
+older pending commit after `HEAD` advances and resume a matching tag created
+before an interrupted lookup. The pending record is cleared only after the tag
+and exact PlaceVersion-to-commit lookup both succeed.

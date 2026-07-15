@@ -22,6 +22,10 @@ RELEASE_BUILD_SCRIPT_PATH = ROOT / "scripts/build-racer-release.sh"
 RELEASE_BUILD_SCRIPT = RELEASE_BUILD_SCRIPT_PATH.read_text()
 RELEASE_BUILD_TEST_PATH = ROOT / "scripts/test-release-snapshot-build.sh"
 RELEASE_BUILD_TEST = RELEASE_BUILD_TEST_PATH.read_text()
+PUBLISH_STATE_SCRIPT_PATH = ROOT / "scripts/racer-publish-state.py"
+PUBLISH_STATE_SCRIPT = PUBLISH_STATE_SCRIPT_PATH.read_text()
+PUBLISH_RECOVERY_TEST_PATH = ROOT / "scripts/test-publish-recovery.py"
+PUBLISH_RECOVERY_TEST = PUBLISH_RECOVERY_TEST_PATH.read_text()
 FINALIZE_SCRIPT_PATH = ROOT / "scripts/finalize-studio-publish.sh"
 FINALIZE_SCRIPT = FINALIZE_SCRIPT_PATH.read_text()
 LOOKUP_SCRIPT = (ROOT / "scripts/lookup-place-version.sh").read_text()
@@ -43,23 +47,30 @@ for token in [
     'elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
     'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
+    'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
+    'RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"',
+    '"${STATE_HELPER}" assert-absent',
     'PRIVATE_ARTIFACT="${TEMP_ROOT}/racer.rbxlx"',
     'atomic_install_artifact',
     'require_release_state',
     'if [[ "${BUILD_ONLY}" == "true" ]]; then',
+    'create_pending_state "studio"',
     "hashlib.sha256",
     'echo "Commit: ${GIT_COMMIT}"',
     'echo "SHA-256: ${BUILD_SHA256}"',
     'payload.get("versionNumber")',
     'update-ref "refs/tags/${PREFLIGHT_TAG}"',
+    'create_pending_state "open-cloud"',
+    '"${STATE_HELPER}" validate-artifact',
     '--data-binary @"${PRIVATE_ARTIFACT}"',
-    'git_repo tag "${TAG}" "${GIT_COMMIT}"',
-    'lookup-place-version.sh" "${PLACE_VERSION}"',
+    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
+    '"${FINALIZER}" "${PLACE_VERSION}"',
 ]:
     if token not in PUBLISH_SCRIPT:
         fail(f"Racer publish contract is missing: {token}")
 
 snapshot_build_index = PUBLISH_SCRIPT.index('"${BUILD_HELPER}" \\')
+pending_guard_index = PUBLISH_SCRIPT.index('"${STATE_HELPER}" assert-absent')
 install_index = PUBLISH_SCRIPT.index("atomic_install_artifact", snapshot_build_index)
 build_only_index = PUBLISH_SCRIPT.index(
     'if [[ "${BUILD_ONLY}" == "true" ]]; then'
@@ -72,6 +83,15 @@ universe_index = PUBLISH_SCRIPT.index(
     ': "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"'
 )
 curl_index = PUBLISH_SCRIPT.index("curl --fail-with-body")
+studio_pending_index = PUBLISH_SCRIPT.index('create_pending_state "studio"')
+cloud_pending_index = PUBLISH_SCRIPT.index('create_pending_state "open-cloud"')
+manifest_recheck_index = PUBLISH_SCRIPT.index(
+    '"${STATE_HELPER}" validate-artifact', cloud_pending_index
+)
+record_version_index = PUBLISH_SCRIPT.index(
+    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"'
+)
+finalizer_index = PUBLISH_SCRIPT.index('"${FINALIZER}" "${PLACE_VERSION}"')
 preflight_delete_index = PUBLISH_SCRIPT.index(
     'update-ref -d "refs/tags/${PREFLIGHT_TAG}"'
 )
@@ -79,15 +99,21 @@ network_recheck_index = PUBLISH_SCRIPT.index(
     "require_release_state", preflight_delete_index
 )
 if not (
-    snapshot_build_index
+    pending_guard_index
+    < snapshot_build_index
     < install_index
     < build_only_index
+    < studio_pending_index
     < build_only_exit_index
     < api_key_index
     < universe_index
     < preflight_delete_index
     < network_recheck_index
+    < cloud_pending_index
+    < manifest_recheck_index
     < curl_index
+    < record_version_index
+    < finalizer_index
 ):
     fail(
         "snapshot build must install before build-only exits, while network publishing "
@@ -105,6 +131,7 @@ for forbidden in [
     'BUILD_INFO_FILE="src/shared/GeneratedBuildInfo.lua"',
     'PLACE_IDS_FILE="src/shared/GeneratedPlaceIds.lua"',
     'rojo build "${PROJECT_FILE}"',
+    'git_repo tag "${TAG}"',
 ]:
     if forbidden in PUBLISH_SCRIPT:
         fail(f"Racer publish contract must not contain: {forbidden}")
@@ -160,22 +187,57 @@ for token in [
     if token not in RELEASE_BUILD_TEST:
         fail(f"Release snapshot integration coverage is missing: {token}")
 
+if PUBLISH_STATE_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
+    fail("Pending publish state helper must be executable")
+
+for token in [
+    'STATE_PATH = BUILD_DIR / "racer-publish-pending.json"',
+    'os.link(temporary, STATE_PATH)',
+    'os.replace(temporary, STATE_PATH)',
+    'os.fsync(stream.fileno())',
+    'fcntl.flock(descriptor, fcntl.LOCK_EX)',
+    'stat.S_IMODE(metadata.st_mode) != 0o600',
+    'state == "prepared"',
+    '"state"] = "version-recorded"',
+    'integer_field(place_ids, "LobbyPlaceId")',
+    'integer_field(place_ids, "RacerPlaceId")',
+    'STATE_PATH.unlink()',
+]:
+    if token not in PUBLISH_STATE_SCRIPT:
+        fail(f"Pending publish state contract is missing: {token}")
+
+if PUBLISH_RECOVERY_TEST_PATH.stat().st_mode & 0o111 == 0:
+    fail("Pending publish recovery integration test must be executable")
+
+for token in [
+    'test_failed_request_and_retry(parent)',
+    'test_invalid_responses(parent)',
+    'test_build_only(parent)',
+    'test_conflict_and_crash_resume(parent)',
+    'test_lookup_failure_resume(parent)',
+    'test_mismatches_and_corruption(parent)',
+    'test_atomic_state_operations(parent)',
+    'mutate_after_state_create=True',
+    'if secret.encode() in raw_pending:',
+]:
+    if token not in PUBLISH_RECOVERY_TEST:
+        fail(f"Pending publish recovery coverage is missing: {token}")
+
 if FINALIZE_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
     fail("Studio publish finalizer must be executable")
 
 for token in [
     '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
-    'BUILD_FILE="build/racer.rbxlx"',
+    'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
+    'RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
-    'module_source("GeneratedBuildInfo")',
-    'module_source("GeneratedPlaceIds")',
-    'string_field(build_info, "GitCommit")',
-    'string_field(build_info, "GitCommitShort")',
-    'string_field(build_info, "PublishedAt")',
-    'integer_field(place_ids, "RacerPlaceId")',
+    '"${STATE_HELPER}" inspect',
+    '"${STATE_HELPER}" validate-artifact',
+    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
     'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     'refs/tags/${TAG}^{commit}',
-    'lookup-place-version.sh" "${PLACE_VERSION}"',
+    '"${STATE_HELPER}" clear \\',
+    '--artifact-sha256 "${ARTIFACT_SHA256}"',
 ]:
     if token not in FINALIZE_SCRIPT:
         fail(f"Studio publish finalizer contract is missing: {token}")

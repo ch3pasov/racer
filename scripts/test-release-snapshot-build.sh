@@ -13,6 +13,18 @@ trap cleanup EXIT
 TEST_REPO="${TEMP_ROOT}/repo"
 git -c safe.directory="${ROOT_DIR}" clone --quiet --no-hardlinks "${ROOT_DIR}" "${TEST_REPO}"
 
+# Exercise the current worktree scripts even when this test runs before its commit.
+for relative_path in \
+  scripts/finalize-studio-publish.sh \
+  scripts/publish-place.sh \
+  scripts/racer-publish-state.py; do
+  cp "${ROOT_DIR}/${relative_path}" "${TEST_REPO}/${relative_path}"
+done
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" config user.name "Racer Release Test"
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" config user.email "racer-release-test@example.invalid"
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" add scripts
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" commit --quiet -m "pending publish test fixture"
+
 HELPER="${TEST_REPO}/scripts/build-racer-release.sh"
 PUBLISHER="${TEST_REPO}/scripts/publish-place.sh"
 GIT_COMMIT="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" rev-parse HEAD)"
@@ -46,22 +58,6 @@ if ! grep -q "PublishedAt = &quot;${FIXED_PUBLISHED_AT}&quot;" "${FIRST_BUILD}" 
   exit 1
 fi
 
-BUILD_INFO_BEFORE="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedBuildInfo.lua)"
-PLACE_IDS_BEFORE="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedPlaceIds.lua)"
-ROBLOX_RACER_PLACE_ID="${RACER_PLACE_ID}" \
-ROBLOX_LOBBY_PLACE_ID="${LOBBY_PLACE_ID}" \
-  "${PUBLISHER}" --build-only >/dev/null
-BUILD_INFO_AFTER="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedBuildInfo.lua)"
-PLACE_IDS_AFTER="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedPlaceIds.lua)"
-if [[ "${BUILD_INFO_BEFORE}" != "${BUILD_INFO_AFTER}" || "${PLACE_IDS_BEFORE}" != "${PLACE_IDS_AFTER}" ]]; then
-  echo "Top-level snapshot build changed tracked generated metadata." >&2
-  exit 1
-fi
-if [[ ! -s "${TEST_REPO}/build/racer.rbxlx" ]]; then
-  echo "Top-level build-only mode did not atomically install the release artifact." >&2
-  exit 1
-fi
-
 printf '\n-- Uncommitted integration-test mutation.\n' >> "${TEST_REPO}/src/racer/shared/RacerConfig.lua"
 "${HELPER}" \
   "${GIT_COMMIT}" \
@@ -86,6 +82,27 @@ if [[ "${DIRTY_PUBLISH_STATUS}" -eq 0 ]]; then
 fi
 if [[ "${DIRTY_PUBLISH_OUTPUT}" != *"dirty git tree"* ]]; then
   echo "Top-level publisher did not report its dirty-tree refusal." >&2
+  exit 1
+fi
+
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" restore src/racer/shared/RacerConfig.lua
+BUILD_INFO_BEFORE="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedBuildInfo.lua)"
+PLACE_IDS_BEFORE="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedPlaceIds.lua)"
+ROBLOX_RACER_PLACE_ID="${RACER_PLACE_ID}" \
+ROBLOX_LOBBY_PLACE_ID="${LOBBY_PLACE_ID}" \
+  "${PUBLISHER}" --build-only >/dev/null
+BUILD_INFO_AFTER="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedBuildInfo.lua)"
+PLACE_IDS_AFTER="$(git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" hash-object src/shared/GeneratedPlaceIds.lua)"
+if [[ "${BUILD_INFO_BEFORE}" != "${BUILD_INFO_AFTER}" || "${PLACE_IDS_BEFORE}" != "${PLACE_IDS_AFTER}" ]]; then
+  echo "Top-level snapshot build changed tracked generated metadata." >&2
+  exit 1
+fi
+if [[ ! -s "${TEST_REPO}/build/racer.rbxlx" ]]; then
+  echo "Top-level build-only mode did not atomically install the release artifact." >&2
+  exit 1
+fi
+if [[ ! -s "${TEST_REPO}/build/racer-publish-pending.json" ]]; then
+  echo "Top-level build-only mode did not record its pending Studio publish." >&2
   exit 1
 fi
 
