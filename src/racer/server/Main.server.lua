@@ -572,14 +572,14 @@ local function refreshRecordLeaderboards(player: Player?)
 	local refreshEpoch = beginV7RecordUiRequest()
 
 	if not player then
+		setRecordLeaderboardText("self", leaderboardEmpty("v7 Your Top 10"))
+		setRecordLeaderboardText("friends", leaderboardEmpty(V7_FRIENDS_BOARD_TITLE))
 		setRecordLeaderboardText("global", leaderboardLoading("v7 Global Top 10"))
 		task.spawn(function()
 			local globalRows, globalOk = readGlobalTop(10)
 			if not isCurrentV7RecordUiRequest(refreshEpoch, player) then
 				return
 			end
-			setRecordLeaderboardText("self", leaderboardEmpty("v7 Your Top 10"))
-			setRecordLeaderboardText("friends", leaderboardEmpty(V7_FRIENDS_BOARD_TITLE))
 			setRecordLeaderboardText(
 				"global",
 				if globalOk

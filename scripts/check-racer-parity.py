@@ -1393,6 +1393,16 @@ require(
 )
 
 require(
+    r"if not player then\s*"
+    r'setRecordLeaderboardText\("self", leaderboardEmpty\("v7 Your Top 10"\)\)\s*'
+    r'setRecordLeaderboardText\("friends", leaderboardEmpty\(V7_FRIENDS_BOARD_TITLE\)\)\s*'
+    r'setRecordLeaderboardText\("global", leaderboardLoading\("v7 Global Top 10"\)\)\s*'
+    r"task\.spawn\(function\(\)",
+    SERVER,
+    "v7 must clear player-specific boards before an empty-cabinet global refresh can yield",
+)
+
+require(
     r"if not globalOk or not personalOk then.*?"
     r"if isCurrentV7RecordUiRequest\(saveEpoch, player\) then\s*"
     r"setRecordLeaderboardText\(.*?Save failed.*?end\s*end\s*"
