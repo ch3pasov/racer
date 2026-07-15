@@ -13,8 +13,12 @@ repositories.
 - `src/shared/GeneratedPlaceIds.lua` contains non-secret place ids used by the
   optional in-game lobby return portal.
 - `scripts/check-racer-parity.py` runs static parity checks for the racer model.
+- `scripts/build-racer-release.sh` builds an exact release artifact from an
+  immutable git snapshot with the pinned Rojo version.
 - `scripts/publish-place.sh` builds and publishes Racer Lab through Roblox Open
   Cloud.
+- `scripts/test-release-snapshot-build.sh` verifies release-build determinism,
+  worktree isolation, dirty-tree refusal, and the Rojo version pin.
 - `scripts/finalize-studio-publish.sh` safely records the immutable git mapping
   after a manually verified Roblox Studio publish.
 - `scripts/lookup-place-version.sh` maps a Roblox place version back to the git
@@ -69,7 +73,8 @@ Studio.
 ```sh
 docker compose run --rm roblox bash
 python3 scripts/check-racer-parity.py
-rojo build racer.project.json --output build/racer.rbxlx
+scripts/test-release-snapshot-build.sh
+scripts/publish-place.sh --build-only
 scripts/publish-place.sh
 ```
 
@@ -77,7 +82,9 @@ Publishing refuses to run from a dirty git tree. The published place includes
 the source commit in `ReplicatedStorage.Shared.GeneratedBuildInfo`, and the
 publish script tags successful Roblox versions as `racer-place-v<version>`.
 For example, `scripts/lookup-place-version.sh 153` shows the commit published as
-Roblox place version 153.
+Roblox place version 153. Release builds require the repository-pinned Rojo
+7.5.1; a direct `rojo build` remains suitable for development checks but is not
+the traceable release path.
 
 ## Building For a Studio Fallback
 
@@ -89,9 +96,11 @@ export ROBLOX_RACER_PLACE_ID="..."
 scripts/publish-place.sh --build-only
 ```
 
-The command restores the tracked generated files after creating
-`build/racer.rbxlx` and prints its full commit and SHA-256 for Studio version
-notes. Publish that exact file through Studio before finalizing its mapping.
+The command captures `HEAD`, exports that commit with `git archive`, writes
+release metadata only inside the private snapshot, and atomically installs the
+result as `build/racer.rbxlx`. Live tracked generated files are never changed.
+It prints the artifact's full commit and SHA-256 for Studio version notes.
+Publish that exact file through Studio before finalizing its mapping.
 
 ## Finalizing a Studio Publish
 

@@ -18,6 +18,10 @@ from pathlib import Path
 import sys
 
 
+if sys.argv[1:] == ["--version"]:
+    print("Rojo 7.5.1")
+    raise SystemExit(0)
+
 if len(sys.argv) < 4 or sys.argv[1] != "build" or "--output" not in sys.argv:
     print("fake rojo received an unexpected command", file=sys.stderr)
     raise SystemExit(90)
@@ -109,6 +113,7 @@ def main() -> None:
         for relative in (
             ".gitignore",
             "racer.project.json",
+            "scripts/build-racer-release.sh",
             "scripts/lookup-place-version.sh",
             "scripts/publish-place.sh",
             "src/shared/GeneratedBuildInfo.lua",

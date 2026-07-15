@@ -5,13 +5,29 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
-PROJECT_FILE="racer.project.json"
-OUTPUT_FILE="build/racer.rbxlx"
-BUILD_INFO_FILE="src/shared/GeneratedBuildInfo.lua"
-PLACE_IDS_FILE="src/shared/GeneratedPlaceIds.lua"
+OUTPUT_LABEL="build/racer.rbxlx"
+OUTPUT_FILE="${ROOT_DIR}/${OUTPUT_LABEL}"
+BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"
 
 git_repo() {
   git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
+}
+
+sha256_file() {
+  TARGET_FILE="$1" python3 -c 'import hashlib
+import os
+from pathlib import Path
+
+print(hashlib.sha256(Path(os.environ["TARGET_FILE"]).read_bytes()).hexdigest())'
+}
+
+require_clean_tree() {
+  local tree_status
+  tree_status="$(git_repo status --porcelain=v1 --untracked-files=all --ignore-submodules=none)"
+  if [[ -n "${tree_status}" ]]; then
+    echo "Refusing to build or publish from a dirty git tree. Commit or stash changes first." >&2
+    exit 1
+  fi
 }
 
 BUILD_ONLY="false"
@@ -38,51 +54,67 @@ if [[ ! "${LOBBY_PLACE_ID}" =~ ^(0|[1-9][0-9]*)$ ]]; then
   exit 2
 fi
 
-TREE_STATUS="$(git_repo status --porcelain=v1 --untracked-files=all --ignore-submodules=none)"
-if [[ -n "${TREE_STATUS}" ]]; then
-  echo "Refusing to build or publish from a dirty git tree. Commit or stash changes first." >&2
+if [[ ! -x "${BUILD_HELPER}" ]]; then
+  echo "Release snapshot builder is missing or not executable: ${BUILD_HELPER}" >&2
   exit 1
 fi
+
+require_clean_tree
 
 GIT_COMMIT="$(git_repo rev-parse HEAD)"
 GIT_COMMIT_SHORT="$(git_repo rev-parse --short=12 HEAD)"
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-ORIGINAL_BUILD_INFO="$(mktemp)"
-ORIGINAL_PLACE_IDS="$(mktemp)"
-cp "${BUILD_INFO_FILE}" "${ORIGINAL_BUILD_INFO}"
-cp "${PLACE_IDS_FILE}" "${ORIGINAL_PLACE_IDS}"
-restore_build_info() {
-  cp "${ORIGINAL_BUILD_INFO}" "${BUILD_INFO_FILE}"
-  cp "${ORIGINAL_PLACE_IDS}" "${PLACE_IDS_FILE}"
-  rm -f "${ORIGINAL_BUILD_INFO}"
-  rm -f "${ORIGINAL_PLACE_IDS}"
-}
-trap restore_build_info EXIT
+TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/racer-publish.XXXXXX")"
+PRIVATE_ARTIFACT="${TEMP_ROOT}/racer.rbxlx"
+INSTALL_TEMP=""
 
-mkdir -p build
-cat > "${PLACE_IDS_FILE}" <<EOF
-return {
-	LobbyPlaceId = ${LOBBY_PLACE_ID},
-	RacerPlaceId = ${PLACE_ID},
+cleanup() {
+  if [[ -n "${INSTALL_TEMP}" ]]; then
+    rm -f "${INSTALL_TEMP}"
+  fi
+  rm -rf "${TEMP_ROOT}"
 }
-EOF
-cat > "${BUILD_INFO_FILE}" <<EOF
-return {
-	GitCommit = "${GIT_COMMIT}",
-	GitCommitShort = "${GIT_COMMIT_SHORT}",
-	PublishedAt = "${PUBLISHED_AT}",
-}
-EOF
+trap cleanup EXIT
 
-rojo build "${PROJECT_FILE}" --output "${OUTPUT_FILE}"
+"${BUILD_HELPER}" \
+  "${GIT_COMMIT}" \
+  "${PUBLISHED_AT}" \
+  "${LOBBY_PLACE_ID}" \
+  "${PLACE_ID}" \
+  "${PRIVATE_ARTIFACT}"
+
+BUILD_SHA256="$(sha256_file "${PRIVATE_ARTIFACT}")"
+
+require_release_state() {
+  if [[ "$(git_repo rev-parse HEAD)" != "${GIT_COMMIT}" ]]; then
+    echo "HEAD changed while preparing the Racer release artifact." >&2
+    exit 1
+  fi
+  require_clean_tree
+  if [[ "$(sha256_file "${PRIVATE_ARTIFACT}")" != "${BUILD_SHA256}" ]]; then
+    echo "Private Racer release artifact changed after it was built." >&2
+    exit 1
+  fi
+}
+
+atomic_install_artifact() {
+  mkdir -p "$(dirname -- "${OUTPUT_FILE}")"
+  INSTALL_TEMP="$(mktemp "$(dirname -- "${OUTPUT_FILE}")/.racer.rbxlx.XXXXXX")"
+  cp "${PRIVATE_ARTIFACT}" "${INSTALL_TEMP}"
+  chmod 0644 "${INSTALL_TEMP}"
+  mv -f "${INSTALL_TEMP}" "${OUTPUT_FILE}"
+  INSTALL_TEMP=""
+  if [[ "$(sha256_file "${OUTPUT_FILE}")" != "${BUILD_SHA256}" ]]; then
+    echo "Installed Racer release artifact does not match the private build." >&2
+    exit 1
+  fi
+}
+
+require_release_state
+atomic_install_artifact
 
 if [[ "${BUILD_ONLY}" == "true" ]]; then
-  BUILD_SHA256="$(OUTPUT_FILE="${OUTPUT_FILE}" python3 -c 'import hashlib
-import os
-from pathlib import Path
-
-print(hashlib.sha256(Path(os.environ["OUTPUT_FILE"]).read_bytes()).hexdigest())')"
-  echo "Built ${OUTPUT_FILE} for Racer place ${PLACE_ID}"
+  echo "Built ${OUTPUT_LABEL} for Racer place ${PLACE_ID}"
   echo "Commit: ${GIT_COMMIT}"
   echo "SHA-256: ${BUILD_SHA256}"
   exit 0
@@ -103,11 +135,13 @@ fi
 git_repo update-ref "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}" ""
 git_repo update-ref -d "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}"
 
+require_release_state
+
 PUBLISH_RESPONSE="$(env -u ROBLOX_API_KEY curl --fail-with-body \
   --request POST \
   --header @<(builtin printf 'x-api-key: %s\n' "${ROBLOX_API_KEY}") \
   --header "Content-Type: application/xml" \
-  --data-binary @"${OUTPUT_FILE}" \
+  --data-binary @"${PRIVATE_ARTIFACT}" \
   "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"
 
 if ! PLACE_VERSION="$(PUBLISH_RESPONSE="${PUBLISH_RESPONSE}" python3 -c 'import json

@@ -18,6 +18,10 @@ SERVER = (ROOT / "src/racer/server/Main.server.lua").read_text()
 MATH = (ROOT / "src/racer/shared/RacerMath.lua").read_text()
 TEXTURES = (ROOT / "src/racer/shared/RacerTextures.lua").read_text()
 PUBLISH_SCRIPT = (ROOT / "scripts/publish-place.sh").read_text()
+RELEASE_BUILD_SCRIPT_PATH = ROOT / "scripts/build-racer-release.sh"
+RELEASE_BUILD_SCRIPT = RELEASE_BUILD_SCRIPT_PATH.read_text()
+RELEASE_BUILD_TEST_PATH = ROOT / "scripts/test-release-snapshot-build.sh"
+RELEASE_BUILD_TEST = RELEASE_BUILD_TEST_PATH.read_text()
 FINALIZE_SCRIPT_PATH = ROOT / "scripts/finalize-studio-publish.sh"
 FINALIZE_SCRIPT = FINALIZE_SCRIPT_PATH.read_text()
 LOOKUP_SCRIPT = (ROOT / "scripts/lookup-place-version.sh").read_text()
@@ -38,23 +42,25 @@ for token in [
     'if [[ "$#" -eq 0 ]]',
     'elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
-    'trap restore_build_info EXIT',
+    'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
+    'PRIVATE_ARTIFACT="${TEMP_ROOT}/racer.rbxlx"',
+    'atomic_install_artifact',
+    'require_release_state',
     'if [[ "${BUILD_ONLY}" == "true" ]]; then',
     "hashlib.sha256",
     'echo "Commit: ${GIT_COMMIT}"',
     'echo "SHA-256: ${BUILD_SHA256}"',
     'payload.get("versionNumber")',
     'update-ref "refs/tags/${PREFLIGHT_TAG}"',
+    '--data-binary @"${PRIVATE_ARTIFACT}"',
     'git_repo tag "${TAG}" "${GIT_COMMIT}"',
     'lookup-place-version.sh" "${PLACE_VERSION}"',
 ]:
     if token not in PUBLISH_SCRIPT:
         fail(f"Racer publish contract is missing: {token}")
 
-restore_index = PUBLISH_SCRIPT.index("trap restore_build_info EXIT")
-build_index = PUBLISH_SCRIPT.index(
-    'rojo build "${PROJECT_FILE}" --output "${OUTPUT_FILE}"'
-)
+snapshot_build_index = PUBLISH_SCRIPT.index('"${BUILD_HELPER}" \\')
+install_index = PUBLISH_SCRIPT.index("atomic_install_artifact", snapshot_build_index)
 build_only_index = PUBLISH_SCRIPT.index(
     'if [[ "${BUILD_ONLY}" == "true" ]]; then'
 )
@@ -66,23 +72,93 @@ universe_index = PUBLISH_SCRIPT.index(
     ': "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"'
 )
 curl_index = PUBLISH_SCRIPT.index("curl --fail-with-body")
+preflight_delete_index = PUBLISH_SCRIPT.index(
+    'update-ref -d "refs/tags/${PREFLIGHT_TAG}"'
+)
+network_recheck_index = PUBLISH_SCRIPT.index(
+    "require_release_state", preflight_delete_index
+)
 if not (
-    restore_index
-    < build_index
+    snapshot_build_index
+    < install_index
     < build_only_index
     < build_only_exit_index
     < api_key_index
     < universe_index
+    < preflight_delete_index
+    < network_recheck_index
     < curl_index
 ):
     fail(
-        "build-only must restore generated files and exit after Rojo build "
-        "but before API-key, universe, or network use"
+        "snapshot build must install before build-only exits, while network publishing "
+        "must recheck release state after tag preflight and before curl"
     )
 
-for forbidden in ["ROBLOX_PLACE_ID", "git_repo tag -f", "git tag -f"]:
+if PUBLISH_SCRIPT.count("require_release_state") < 3:
+    fail("Racer publish must verify the captured release before install and network use")
+
+for forbidden in [
+    "ROBLOX_PLACE_ID",
+    "git_repo tag -f",
+    "git tag -f",
+    "restore_build_info",
+    'BUILD_INFO_FILE="src/shared/GeneratedBuildInfo.lua"',
+    'PLACE_IDS_FILE="src/shared/GeneratedPlaceIds.lua"',
+    'rojo build "${PROJECT_FILE}"',
+]:
     if forbidden in PUBLISH_SCRIPT:
         fail(f"Racer publish contract must not contain: {forbidden}")
+
+if RELEASE_BUILD_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
+    fail("Release snapshot builder must be executable")
+
+for token in [
+    'EXPECTED_ROJO_VERSION="Rojo 7.5.1"',
+    'git_repo archive --format=tar --output="${ARCHIVE_FILE}" "${GIT_COMMIT}"',
+    'tar -xf "${ARCHIVE_FILE}" -C "${SNAPSHOT_DIR}"',
+    'BUILD_INFO_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedBuildInfo.lua"',
+    'PLACE_IDS_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedPlaceIds.lua"',
+    'cd "${SNAPSHOT_DIR}"',
+    'LC_ALL=C rojo build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"',
+    'mv -f "${OUTPUT_TEMP}" "${OUTPUT_FILE}"',
+]:
+    if token not in RELEASE_BUILD_SCRIPT:
+        fail(f"Release snapshot builder contract is missing: {token}")
+
+version_check_index = RELEASE_BUILD_SCRIPT.index(
+    'if [[ "${ACTUAL_ROJO_VERSION}" != "${EXPECTED_ROJO_VERSION}" ]]'
+)
+archive_index = RELEASE_BUILD_SCRIPT.index("git_repo archive")
+metadata_index = RELEASE_BUILD_SCRIPT.index(
+    'BUILD_INFO_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedBuildInfo.lua"'
+)
+rojo_build_index = RELEASE_BUILD_SCRIPT.index(
+    'LC_ALL=C rojo build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"'
+)
+if not version_check_index < archive_index < metadata_index < rojo_build_index:
+    fail("Release builder must pin Rojo and build only from the archived snapshot")
+
+for forbidden in [
+    '"${ROOT_DIR}/src/shared/GeneratedBuildInfo.lua"',
+    '"${ROOT_DIR}/src/shared/GeneratedPlaceIds.lua"',
+]:
+    if forbidden in RELEASE_BUILD_SCRIPT:
+        fail(f"Release snapshot builder must not write a live generated module: {forbidden}")
+
+if RELEASE_BUILD_TEST_PATH.stat().st_mode & 0o111 == 0:
+    fail("Release snapshot integration test must be executable")
+
+for token in [
+    'FIXED_PUBLISHED_AT="2000-01-02T03:04:05Z"',
+    'cmp -s "${FIRST_BUILD}" "${SECOND_BUILD}"',
+    "Uncommitted integration-test mutation",
+    'cmp -s "${FIRST_BUILD}" "${DIRTY_BUILD}"',
+    '"${PUBLISHER}" --build-only',
+    'echo "Rojo 0.0.0"',
+    "Release helper accepted an unpinned Rojo version.",
+]:
+    if token not in RELEASE_BUILD_TEST:
+        fail(f"Release snapshot integration coverage is missing: {token}")
 
 if FINALIZE_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
     fail("Studio publish finalizer must be executable")
