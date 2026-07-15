@@ -35,14 +35,34 @@ RUN set -eu; \
 
 COPY --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/racer-docker-entrypoint
 
-RUN /usr/sbin/groupadd --gid 1000 codex \
-    && /usr/sbin/useradd \
-        --uid 1000 \
-        --gid codex \
-        --create-home \
-        --shell /bin/bash \
-        codex \
-    && /usr/bin/install -d -m 0755 -o codex -g codex /home/codex/.aftman
+RUN set -eu; \
+    existing_group="$(/usr/bin/getent group 1000 | /usr/bin/cut -d: -f1 || true)"; \
+    if [ -n "${existing_group}" ]; then \
+        if [ "${existing_group}" != "codex" ]; then \
+            /usr/sbin/groupmod --new-name codex "${existing_group}"; \
+        fi; \
+    else \
+        /usr/sbin/groupadd --gid 1000 codex; \
+    fi; \
+    existing_user="$(/usr/bin/getent passwd 1000 | /usr/bin/cut -d: -f1 || true)"; \
+    if [ -n "${existing_user}" ]; then \
+        if [ "${existing_user}" != "codex" ]; then \
+            /usr/sbin/usermod \
+                --login codex \
+                --home /home/codex \
+                --move-home \
+                "${existing_user}"; \
+        fi; \
+        /usr/sbin/usermod --gid codex --shell /bin/bash codex; \
+    else \
+        /usr/sbin/useradd \
+            --uid 1000 \
+            --gid codex \
+            --create-home \
+            --shell /bin/bash \
+            codex; \
+    fi; \
+    /usr/bin/install -d -m 0755 -o codex -g codex /home/codex/.aftman
 
 ENV HOME="/home/codex"
 USER codex
