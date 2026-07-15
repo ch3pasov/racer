@@ -38,6 +38,7 @@ local WORLD_RENDER_INTERVAL = 1 / 20
 local WORLD_SCREEN_MAX_DISTANCE = 185
 local SETTINGS_LABEL_INTERVAL = 0.2
 local PERF_LOG_INTERVAL = 5
+local OCCUPANT_THUMBNAIL_RETRY_SECONDS = 5
 local OBJECT_Z_STRIDE = 4
 local STUTTER_FRAME_TIME = 1 / 30
 local SEVERE_STUTTER_FRAME_TIME = 1 / 15
@@ -164,6 +165,14 @@ local function requestThumbnailForUserId(userId: number)
 		avatarImageCache[userId] = if hasImage then image else false
 		avatarImagePending[userId] = nil
 		avatarImageCacheRevision += 1
+		if not hasImage then
+			task.delay(OCCUPANT_THUMBNAIL_RETRY_SECONDS, function()
+				if avatarImageCache[userId] == false and avatarImagePending[userId] ~= true then
+					avatarImageCache[userId] = nil
+					avatarImageCacheRevision += 1
+				end
+			end)
+		end
 	end)
 end
 

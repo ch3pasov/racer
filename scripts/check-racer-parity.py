@@ -652,6 +652,7 @@ for token in [
         fail(f"client must gate driver and record-board features by version flags: {token}")
 
 for token in [
+    "local OCCUPANT_THUMBNAIL_RETRY_SECONDS = 5",
     "local avatarImagePending = {}",
     "local avatarImageCacheRevision = 0",
     "local function requestThumbnailForUserId(userId: number)",
@@ -659,6 +660,8 @@ for token in [
     "avatarImagePending[userId] = true\n\ttask.spawn(function()",
     "avatarImageCache[userId] = if hasImage then image else false",
     "avatarImagePending[userId] = nil",
+    "task.delay(OCCUPANT_THUMBNAIL_RETRY_SECONDS, function()",
+    "avatarImageCache[userId] = nil",
     "local function cachedThumbnailForUserId(userId: number): string?",
     "requestThumbnailForUserId(userId)",
     'driverAvatar.Image = ""\n\t\t\tdriverAvatar.Visible = false',
@@ -681,6 +684,24 @@ if CLIENT.count("requestThumbnailForUserId(") != 2:
     fail("occupant thumbnail requests must only start through the non-yielding cache helper")
 if CLIENT.count("cachedThumbnailForUserId(") != 3:
     fail("only the v6+ driver and passenger paths may resolve occupant thumbnails")
+if CLIENT.count("task.delay(OCCUPANT_THUMBNAIL_RETRY_SECONDS, function()") != 1:
+    fail("failed occupant thumbnails must schedule exactly one temporary-cache retry")
+if CLIENT.count("avatarImageCacheRevision += 1") != 2:
+    fail("occupant cache completion and retry expiry must each invalidate world-screen renders")
+
+require(
+    r"avatarImageCache\[userId\] = if hasImage then image else false\s*"
+    r"avatarImagePending\[userId\] = nil\s*"
+    r"avatarImageCacheRevision \+= 1\s*"
+    r"if not hasImage then\s*"
+    r"task\.delay\(OCCUPANT_THUMBNAIL_RETRY_SECONDS, function\(\)\s*"
+    r"if\s*avatarImageCache\[userId\] == false\s*"
+    r"and avatarImagePending\[userId\] ~= true\s*then\s*"
+    r"avatarImageCache\[userId\] = nil\s*"
+    r"avatarImageCacheRevision \+= 1",
+    CLIENT,
+    "failed occupant thumbnails must use a guarded temporary negative cache and rerender on expiry",
+)
 
 occupant_gate = re.search(
     r"if not RacerConfig\.hasDriverOccupants\(mode\) then(.*?)\n\telse(.*?)\n\tend\n\n\tif RacerConfig\.isFinalLike",
