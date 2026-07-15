@@ -461,6 +461,7 @@ for token in [
     'test_build_only(parent)',
     'test_reproducible_artifact_integrity(parent)',
     'test_conflict_and_crash_resume(parent)',
+    'test_symbolic_publish_tag_guards(parent)',
     'test_lookup_failure_resume(parent)',
     'test_recovery_ref_reachability(parent)',
     'test_recovery_ref_crash_resume(parent)',
@@ -539,7 +540,8 @@ for token in [
     '/usr/bin/cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"',
     'require_original_artifact_state',
     'state_helper record-version "${PLACE_VERSION}"',
-    'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
+    'symbolic-ref -q "refs/tags/${TAG}"',
+    'update-ref --no-deref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     'refs/tags/${TAG}^{commit}',
     'symbolic-ref -q "${PENDING_REF}"',
     'require_pending_ref_state',
@@ -573,7 +575,7 @@ second_artifact_recheck_index = FINALIZE_SCRIPT.index(
     "require_original_artifact_state", record_version_index
 )
 tag_create_index = FINALIZE_SCRIPT.index(
-    'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
+    'update-ref --no-deref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     second_artifact_recheck_index,
 )
 lookup_index = FINALIZE_SCRIPT.index('LOOKUP_OUTPUT="$(/bin/bash -p "${LOOKUP_SCRIPT}"', tag_create_index)

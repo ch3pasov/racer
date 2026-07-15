@@ -213,8 +213,29 @@ inspect_pending_ref() {
   return 1
 }
 
+require_final_tag_direct_ref() {
+  local status
+  local symbolic_target
+
+  if symbolic_target="$(git_repo symbolic-ref -q "refs/tags/${TAG}" 2>/dev/null)"; then
+    echo "Immutable publish tag ${TAG} must not be symbolic (${symbolic_target})." >&2
+    return 1
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 1 ]]; then
+    echo "Immutable publish tag ${TAG} symbolic state could not be inspected." >&2
+    return 1
+  fi
+  return 0
+}
+
 final_tag_points_to_commit() {
   local tag_commit
+
+  if ! require_final_tag_direct_ref; then
+    return 1
+  fi
 
   if ! tag_commit="$(git_repo rev-parse --verify "refs/tags/${TAG}^{commit}" 2>/dev/null)"; then
     return 1
@@ -481,6 +502,9 @@ RECORDED_PLACE_VERSION="${PLACE_VERSION}"
 require_original_artifact_state
 require_pending_ref_state
 
+if ! require_final_tag_direct_ref; then
+  exit 1
+fi
 if EXISTING_TAG_COMMIT="$(git_repo rev-parse --verify "refs/tags/${TAG}^{commit}" 2>/dev/null)"; then
   if [[ "${EXISTING_TAG_COMMIT}" != "${GIT_COMMIT}" ]]; then
     echo "Immutable publish tag ${TAG} already points to another commit." >&2
@@ -488,17 +512,15 @@ if EXISTING_TAG_COMMIT="$(git_repo rev-parse --verify "refs/tags/${TAG}^{commit}
   fi
 else
   # An empty expected old value makes this an atomic create-only operation.
-  if ! git_repo update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""; then
-    if ! EXISTING_TAG_COMMIT="$(git_repo rev-parse --verify "refs/tags/${TAG}^{commit}" 2>/dev/null)" \
-      || [[ "${EXISTING_TAG_COMMIT}" != "${GIT_COMMIT}" ]]; then
+  if ! git_repo update-ref --no-deref "refs/tags/${TAG}" "${GIT_COMMIT}" ""; then
+    if ! final_tag_points_to_commit; then
       echo "Failed to create immutable publish tag ${TAG}." >&2
       exit 1
     fi
   fi
 fi
 
-TAG_COMMIT="$(git_repo rev-parse "refs/tags/${TAG}^{commit}")"
-if [[ "${TAG_COMMIT}" != "${GIT_COMMIT}" ]]; then
+if ! final_tag_points_to_commit; then
   echo "Publish tag ${TAG} does not resolve to ${GIT_COMMIT}." >&2
   exit 1
 fi

@@ -599,6 +599,95 @@ def test_conflict_and_crash_resume(parent: Path) -> None:
         raise RuntimeError("same-tag crash resume did not preserve the release commit")
 
 
+def test_symbolic_publish_tag_guards(parent: Path) -> None:
+    same_target = Fixture(parent, "same-target-symbolic-tag")
+    require_success(same_target.build_only(), "same-target symbolic tag build-only")
+    same_version = "700132"
+    same_tag = f"refs/tags/racer-place-v{same_version}"
+    same_target_ref = "refs/heads/symbolic-tag-target"
+    git(
+        same_target.repo,
+        "update-ref",
+        same_target_ref,
+        same_target.release_commit,
+        "",
+    )
+    git(same_target.repo, "symbolic-ref", same_tag, same_target_ref)
+    same_target_before = git(
+        same_target.repo, "rev-parse", same_target_ref, capture=True
+    )
+    require_failure(
+        same_target.finalize(same_version), "same-target symbolic publish tag"
+    )
+    if git(same_target.repo, "symbolic-ref", same_tag, capture=True) != same_target_ref:
+        raise RuntimeError("same-target symbolic publish tag was replaced")
+    if (
+        git(same_target.repo, "rev-parse", same_target_ref, capture=True)
+        != same_target_before
+    ):
+        raise RuntimeError("same-target symbolic publish tag changed its target ref")
+    same_state = same_target.load_state()
+    if (
+        same_state["state"] != "version-recorded"
+        or not same_target.pending_ref_exists()
+        or same_target.pending_ref_commit() != same_target.release_commit
+    ):
+        raise RuntimeError("same-target symbolic publish tag did not retain recovery state")
+    require_failure(
+        same_target.run(
+            [
+                str(same_target.repo / "scripts/lookup-place-version.sh"),
+                same_version,
+            ]
+        ),
+        "same-target symbolic publish tag lookup",
+    )
+
+    unborn_target = Fixture(parent, "unborn-target-symbolic-tag")
+    require_success(unborn_target.build_only(), "unborn symbolic tag build-only")
+    unborn_version = "700133"
+    unborn_tag = f"refs/tags/racer-place-v{unborn_version}"
+    unborn_target_ref = "refs/heads/unborn-symbolic-tag-target"
+    git(unborn_target.repo, "symbolic-ref", unborn_tag, unborn_target_ref)
+    result = unborn_target.finalize(unborn_version)
+    require_failure(result, "unborn-target symbolic publish tag")
+    if git(unborn_target.repo, "symbolic-ref", unborn_tag, capture=True) != unborn_target_ref:
+        raise RuntimeError("unborn-target symbolic publish tag was replaced")
+    target_probe = subprocess.run(
+        [
+            "git",
+            "-c",
+            f"safe.directory={unborn_target.repo}",
+            "-C",
+            str(unborn_target.repo),
+            "show-ref",
+            "--verify",
+            "--quiet",
+            unborn_target_ref,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if target_probe.returncode != 1:
+        raise RuntimeError("unborn-target symbolic publish tag created its target ref")
+    unborn_state = unborn_target.load_state()
+    if (
+        unborn_state["state"] != "version-recorded"
+        or not unborn_target.pending_ref_exists()
+        or unborn_target.pending_ref_commit() != unborn_target.release_commit
+    ):
+        raise RuntimeError("unborn-target symbolic publish tag did not retain recovery state")
+    require_failure(
+        unborn_target.run(
+            [
+                str(unborn_target.repo / "scripts/lookup-place-version.sh"),
+                unborn_version,
+            ]
+        ),
+        "unborn-target symbolic publish tag lookup",
+    )
+
+
 def test_lookup_failure_resume(parent: Path) -> None:
     fixture = Fixture(parent, "lookup-failure", broken_lookup=True)
     version = "700140"
@@ -930,6 +1019,7 @@ def main() -> None:
         test_build_only(parent)
         test_reproducible_artifact_integrity(parent)
         test_conflict_and_crash_resume(parent)
+        test_symbolic_publish_tag_guards(parent)
         test_lookup_failure_resume(parent)
         test_recovery_ref_reachability(parent)
         test_recovery_ref_crash_resume(parent)
