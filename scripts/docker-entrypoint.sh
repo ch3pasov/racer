@@ -1,5 +1,7 @@
-#!/usr/bin/env bash
+#!/bin/bash
+set +x
+set +a
 set -euo pipefail
 
-aftman install --no-trust-check
+/usr/bin/env -u ROBLOX_API_KEY -u RACER_PUBLISH_API_KEY /usr/local/bin/aftman install --no-trust-check
 exec "$@"

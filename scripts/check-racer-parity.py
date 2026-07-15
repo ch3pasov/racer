@@ -30,6 +30,11 @@ FINALIZE_SCRIPT_PATH = ROOT / "scripts/finalize-studio-publish.sh"
 FINALIZE_SCRIPT = FINALIZE_SCRIPT_PATH.read_text()
 LOOKUP_SCRIPT = (ROOT / "scripts/lookup-place-version.sh").read_text()
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
+DOCKER_COMPOSE = (ROOT / "docker-compose.yml").read_text()
+DOCKER_ENTRYPOINT = (ROOT / "scripts/docker-entrypoint.sh").read_text()
+DOCKER_BOOTSTRAP_TEST = (ROOT / "scripts/test-docker-bootstrap.py").read_text()
+PUBLISH_SECRET_TEST = (ROOT / "scripts/test-publish-api-key-transport.py").read_text()
+README = (ROOT / "README.md").read_text()
 UPLOAD_SCRIPT = (ROOT / "scripts/upload-racer-textures.py").read_text()
 
 
@@ -313,7 +318,25 @@ for token in [
 if FINALIZE_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
     fail("Studio publish finalizer must be executable")
 
+finalize_statements = [
+    line.strip()
+    for line in FINALIZE_SCRIPT.splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
+]
+if finalize_statements[:4] != [
+    "set +x",
+    "set +a",
+    "unset ROBLOX_API_KEY RACER_PUBLISH_API_KEY",
+    "set -euo pipefail",
+]:
+    fail("Studio finalizer must scrub inherited credentials before any child process")
+if FINALIZE_SCRIPT.count("ROBLOX_API_KEY") != 1:
+    fail("Studio finalizer must mention ROBLOX_API_KEY only in its early unset")
+if FINALIZE_SCRIPT.count("RACER_PUBLISH_API_KEY") != 1:
+    fail("Studio finalizer must mention RACER_PUBLISH_API_KEY only in its early unset")
+
 for token in [
+    "unset ROBLOX_API_KEY RACER_PUBLISH_API_KEY",
     '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
     'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
     'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
@@ -404,7 +427,6 @@ if FINALIZE_SCRIPT.count("require_clean_tree") < 3:
     fail("Studio publish finalizer must check cleanliness before and after validation")
 
 for forbidden in [
-    "ROBLOX_API_KEY",
     "curl ",
     "git_repo tag ",
     "git tag ",
@@ -420,6 +442,51 @@ if 'git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}"' not in LOOKUP_SCRIPT:
 
 if "python3" not in DOCKERFILE:
     fail("The release image must install Python for publish and verification scripts")
+
+if "ROBLOX_API_KEY" in DOCKER_COMPOSE:
+    fail("Compose must not inject the Roblox API key into ordinary commands")
+if not DOCKER_ENTRYPOINT.startswith("#!/bin/bash\n"):
+    fail("Docker bootstrap must start through the image's trusted absolute Bash")
+
+docker_entrypoint_statements = [
+    line.strip()
+    for line in DOCKER_ENTRYPOINT.splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
+]
+if docker_entrypoint_statements != [
+    "set +x",
+    "set +a",
+    "set -euo pipefail",
+    "/usr/bin/env -u ROBLOX_API_KEY -u RACER_PUBLISH_API_KEY "
+    "/usr/local/bin/aftman install --no-trust-check",
+    'exec "$@"',
+]:
+    fail("Docker bootstrap must isolate credentials and use trusted absolute binaries")
+
+for token in [
+    'CREDENTIAL_NAMES = ("ROBLOX_API_KEY", "RACER_PUBLISH_API_KEY")',
+    '"/bin/bash",\n            "-a",\n            "-x",',
+    '"credentialsPreserved": True',
+    'assert_no_credentials("successful entrypoint output"',
+    'if "ROBLOX_API_KEY" in roblox_service:',
+]:
+    if token not in DOCKER_BOOTSTRAP_TEST:
+        fail(f"Docker bootstrap credential regression coverage is missing: {token}")
+
+for token in [
+    "FAKE_GIT =",
+    '"direct Studio finalizer"',
+    '"ROBLOX_API_KEY",\n            "RACER_PUBLISH_API_KEY",',
+    'str(repo / "scripts/finalize-studio-publish.sh")',
+]:
+    if token not in PUBLISH_SECRET_TEST:
+        fail(f"Studio finalizer credential regression coverage is missing: {token}")
+
+if (
+    "docker compose run --rm -e ROBLOX_API_KEY roblox scripts/publish-place.sh"
+    not in README
+):
+    fail("README must require explicit API-key injection for container publishing")
 
 for token in [
     "operation_id(operation)",

@@ -12,6 +12,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 TEST_VERSION = "424242"
+STUDIO_TEST_VERSION = "424243"
 
 FAKE_ROJO = r'''#!/usr/bin/env python3
 import hashlib
@@ -153,6 +154,26 @@ real_helper = Path(__file__).with_name("racer-publish-state-real.py")
 os.execv(str(real_helper), [str(real_helper), *sys.argv[1:]])
 '''
 
+FAKE_GIT = r'''#!/usr/bin/env python3
+import hashlib
+import os
+import sys
+
+
+expected = "sentinel-" + hashlib.sha256(
+    b"racer-publish-api-key-transport-test"
+).hexdigest()
+if "ROBLOX_API_KEY" in os.environ or "RACER_PUBLISH_API_KEY" in os.environ:
+    print("git wrapper received a credential variable", file=sys.stderr)
+    raise SystemExit(87)
+if any(expected in value for value in os.environ.values()):
+    print("git wrapper received the credential value", file=sys.stderr)
+    raise SystemExit(87)
+
+real_git = __REAL_GIT__
+os.execv(real_git, [real_git, *sys.argv[1:]])
+'''
+
 
 def write_executable(path: Path, source: str) -> None:
     path.write_text(source)
@@ -174,6 +195,25 @@ def run_publisher(
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-a", "-x", str(repo / "scripts/publish-place.sh"), *arguments],
+        cwd=repo,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def run_finalizer(
+    repo: Path, environment: dict[str, str], version: str
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "bash",
+            "-a",
+            "-x",
+            str(repo / "scripts/finalize-studio-publish.sh"),
+            version,
+        ],
         cwd=repo,
         env=environment,
         text=True,
@@ -240,6 +280,13 @@ def main() -> None:
         write_executable(state_helper, FAKE_STATE_HELPER)
         write_executable(fake_bin / "rojo", FAKE_ROJO)
         write_executable(fake_bin / "curl", FAKE_CURL)
+        real_git = shutil.which("git")
+        if real_git is None:
+            raise RuntimeError("git is required for the publish credential test")
+        write_executable(
+            fake_bin / "git",
+            FAKE_GIT.replace("__REAL_GIT__", repr(real_git)),
+        )
 
         run_checked(["git", "init", "--quiet"], repo)
         run_checked(["git", "config", "user.name", "Racer Release Test"], repo)
@@ -320,6 +367,42 @@ def main() -> None:
         )
         if not (repo / "build/racer-publish-pending.json").is_file():
             raise RuntimeError("build-only publish did not retain Studio pending state")
+
+        direct_finalize_environment = environment.copy()
+        direct_finalize_environment["ROBLOX_API_KEY"] = sentinel
+        direct_finalize_environment["RACER_PUBLISH_API_KEY"] = sentinel
+        direct_finalize_result = run_finalizer(
+            repo, direct_finalize_environment, STUDIO_TEST_VERSION
+        )
+        require_result(
+            direct_finalize_result,
+            "direct Studio finalizer",
+            0,
+            sentinel,
+            "ROBLOX_API_KEY",
+            "RACER_PUBLISH_API_KEY",
+        )
+        if (repo / "build/racer-publish-pending.json").exists():
+            raise RuntimeError("direct Studio finalizer retained pending state")
+        pending_ref = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", "refs/racer-publish/pending"],
+            cwd=repo,
+        )
+        if pending_ref.returncode == 0:
+            raise RuntimeError("direct Studio finalizer retained its recovery ref")
+        if pending_ref.returncode != 1:
+            raise RuntimeError("direct Studio finalizer recovery ref check failed")
+        studio_tag_commit = subprocess.check_output(
+            [
+                "git",
+                "rev-parse",
+                f"refs/tags/racer-place-v{STUDIO_TEST_VERSION}^{{commit}}",
+            ],
+            cwd=repo,
+            text=True,
+        ).strip()
+        if studio_tag_commit != head_commit:
+            raise RuntimeError("direct Studio finalizer tagged the wrong commit")
 
         sentinel_bytes = sentinel.encode()
         for path in repo.rglob("*"):

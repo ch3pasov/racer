@@ -33,7 +33,8 @@ repositories.
 
 ## Required Secrets For Publishing
 
-Do not commit secrets. Put them in your shell or in a local `.env` file:
+Do not commit secrets. Non-secret ids can live in your shell or a local `.env`
+file. Export the API key only in the shell that invokes a command that needs it:
 
 ```sh
 export ROBLOX_API_KEY="..."
@@ -75,6 +76,8 @@ Studio.
 
 ## Local Container Workflow
 
+Start a key-free shell for builds and checks:
+
 ```sh
 docker compose run --rm roblox bash
 python3 scripts/test-docker-bootstrap.py
@@ -82,14 +85,25 @@ python3 scripts/check-racer-parity.py
 scripts/test-release-snapshot-build.sh
 python3 scripts/test-publish-recovery.py
 scripts/publish-place.sh --build-only
-scripts/publish-place.sh
+```
+
+Compose does not automatically put `ROBLOX_API_KEY` into ordinary container
+commands. Pass it explicitly only to a one-shot command that needs Open Cloud,
+such as publishing or reading server logs:
+
+```sh
+docker compose run --rm -e ROBLOX_API_KEY roblox scripts/publish-place.sh
+docker compose run --rm -e ROBLOX_API_KEY roblox \
+  scripts/read-roblox-server-logs.py --warnings-and-errors --pretty
 ```
 
 Compose runs this service as `linux/amd64`, including on Apple Silicon, because
-the pinned Aftman 0.3.0 binary is x86_64-only. The image entrypoint runs
-`aftman install --no-trust-check` before every requested container command, so
-even a fresh `docker compose run --rm roblox bash` has the repository-pinned
-tools available.
+the pinned Aftman 0.3.0 binary is x86_64-only. The image entrypoint runs the
+image-installed Aftman through absolute trusted paths before every requested
+container command. Bootstrap receives neither publish-key variable, while the
+requested one-shot command still receives a key explicitly passed with `-e`.
+Even a fresh `docker compose run --rm roblox bash` therefore has the
+repository-pinned tools available without exposing the publish key to bootstrap.
 
 Publishing refuses to run from a dirty git tree. The published place includes
 the source commit in `ReplicatedStorage.Shared.GeneratedBuildInfo`, and the
@@ -136,8 +150,9 @@ export ROBLOX_RACER_PLACE_ID="..."
 scripts/finalize-studio-publish.sh <verified-place-version>
 ```
 
-The finalizer performs no network operation, does not need an API key, and never
-moves an existing release tag. It consumes the pending record, validates the
+The finalizer performs no network operation, does not need an API key, scrubs any
+inherited publish key before starting child processes, and never moves an
+existing release tag. It consumes the pending record, validates the
 artifact SHA-256, size, embedded commit, timestamp, Racer place, and lobby place,
 then rebuilds that commit with the exact recorded timestamp and place ids. The
 recorded artifact must match both the fresh build's SHA-256 and its exact bytes;

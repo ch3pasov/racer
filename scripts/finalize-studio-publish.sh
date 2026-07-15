@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+set +x
+set +a
+unset ROBLOX_API_KEY RACER_PUBLISH_API_KEY
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
