@@ -156,6 +156,7 @@ local RACER_PLACE_ID = if GeneratedPlaceIds.RacerPlaceId
 	else game.PlaceId
 local MAX_ACCUMULATED_TIME = 1
 local MAX_STEPS_PER_HEARTBEAT = 8
+local DEFAULT_FAST_LAP_TIME = 180
 
 local SETTING_DEFAULTS = {
 	RoadWidth = { min = 500, max = 3000, step = 100, default = 2000 },
@@ -173,12 +174,44 @@ local BACKGROUND_SPEEDS = {
 }
 
 local sessions = {}
+local playerScreenProfiles = {}
 local perfLines = {}
 local recordLeaderboardLabels = {}
 local recordGlobalStore = nil
 local recordPersonalStore = nil
 local recordUiEpoch = 0
 local V7_FRIENDS_BOARD_TITLE = "v7 Friends in Global Top 100"
+
+local function playerScreenProfile(player: Player, screenId: string)
+	local profiles = playerScreenProfiles[player]
+	if not profiles then
+		profiles = {}
+		playerScreenProfiles[player] = profiles
+	end
+	local profile = profiles[screenId]
+	if not profile then
+		profile = {
+			fastLapTime = DEFAULT_FAST_LAP_TIME,
+		}
+		profiles[screenId] = profile
+	end
+	return profile
+end
+
+local function hydrateSessionPlayerState(session, player: Player)
+	session.fastLapTime = playerScreenProfile(player, session.definition.Id).fastLapTime
+end
+
+local function rememberSessionFastLap(session)
+	local player = session.activePlayer
+	if player then
+		playerScreenProfile(player, session.definition.Id).fastLapTime = session.fastLapTime
+	end
+end
+
+local function clearSessionPlayerState(session)
+	session.fastLapTime = DEFAULT_FAST_LAP_TIME
+end
 
 local function v7RecordGlobalStore()
 	if not recordGlobalStore then
@@ -257,7 +290,7 @@ local function createSession(definition)
 		TrafficOffsets = createValue(folder, "StringValue", "TrafficOffsets", ""),
 		CurrentLapTime = createValue(folder, "NumberValue", "CurrentLapTime", 0),
 		LastLapTime = createValue(folder, "NumberValue", "LastLapTime", 0),
-		FastLapTime = createValue(folder, "NumberValue", "FastLapTime", 180),
+		FastLapTime = createValue(folder, "NumberValue", "FastLapTime", DEFAULT_FAST_LAP_TIME),
 		VisibleCars = createValue(folder, "IntValue", "VisibleCars", 0),
 		VisibleSprites = createValue(folder, "IntValue", "VisibleSprites", 0),
 		ClippedObjects = createValue(folder, "IntValue", "ClippedObjects", 0),
@@ -322,7 +355,7 @@ local function createSession(definition)
 		trafficTime = 0,
 		currentLapTime = 0,
 		lastLapTime = 0,
-		fastLapTime = 180,
+		fastLapTime = DEFAULT_FAST_LAP_TIME,
 		lapStarted = false,
 		playerX = 0,
 		steer = 0,
@@ -711,6 +744,7 @@ local function exitScreen(player: Player, message: string?)
 	player:SetAttribute("RacerMode", "Spectating")
 	player:SetAttribute("RacerScreenId", "")
 	session.activePlayer = nil
+	clearSessionPlayerState(session)
 	resetRun(session)
 	session.values.Status.Value = message or `{session.definition.Name} ready.`
 	if RacerConfig.hasRecordBoards(session.definition.Mode) then
@@ -761,6 +795,7 @@ local function enterScreen(player: Player, screenId: string)
 	end
 
 	session.activePlayer = player
+	hydrateSessionPlayerState(session, player)
 	resetRun(session)
 	setCharacterLocked(player, true)
 	player:SetAttribute("Activity", "RacerScreen")
@@ -1169,6 +1204,7 @@ local function updateRacer(session, dt: number)
 			session.currentLapTime = 0
 			if session.lastLapTime <= session.fastLapTime then
 				session.fastLapTime = session.lastLapTime
+				rememberSessionFastLap(session)
 			end
 			recordLapForRecordBoards(session, session.activePlayer, session.lastLapTime)
 		else
@@ -1302,12 +1338,14 @@ Players.PlayerRemoving:Connect(function(player)
 	local session = findPlayerSession(player)
 	if session then
 		session.activePlayer = nil
+		clearSessionPlayerState(session)
 		resetRun(session)
 		session.values.Status.Value = `{session.definition.Name} ready.`
 		if RacerConfig.hasRecordBoards(session.definition.Mode) then
 			refreshRecordLeaderboards(nil)
 		end
 	end
+	playerScreenProfiles[player] = nil
 end)
 
 task.spawn(function()

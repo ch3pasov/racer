@@ -1426,6 +1426,45 @@ for lap_source in [CLIENT, SERVER]:
     if "startPosition > trackLength - RacerConfig.SegmentLength * 2" in lap_source:
         fail("v4+ lap timing must not complete early at the raw track-coordinate wrap")
 
+for token in [
+    "local DEFAULT_FAST_LAP_TIME = 180",
+    "local playerScreenProfiles = {}",
+    "local function playerScreenProfile(player: Player, screenId: string)",
+    "fastLapTime = DEFAULT_FAST_LAP_TIME",
+    "local function hydrateSessionPlayerState(session, player: Player)",
+    "local function rememberSessionFastLap(session)",
+    "local function clearSessionPlayerState(session)",
+    "playerScreenProfiles[player] = nil",
+]:
+    if token not in SERVER:
+        fail(f"fastest laps must be isolated per player and screen: {token}")
+
+if SERVER.count("hydrateSessionPlayerState(session, player)") != 1:
+    fail("player session state must be hydrated exactly once when entering a Racer screen")
+if SERVER.count("rememberSessionFastLap(session)") != 2:
+    fail("a new fastest lap must be written through to exactly one player-screen profile")
+if SERVER.count("clearSessionPlayerState(session)") != 3:
+    fail("both Racer exit paths must clear player-owned state from the shared cabinet")
+
+require(
+    r"local function enterScreen\(player: Player, screenId: string\).*?"
+    r"session\.activePlayer = player\s*hydrateSessionPlayerState\(session, player\)\s*"
+    r"resetRun\(session\)",
+    SERVER,
+    "Racer entry must hydrate the new player's screen state before resetting the run",
+)
+
+for exit_pattern in [
+    r"local function exitScreen\(player: Player, message: string\?\).*?",
+    r"Players\.PlayerRemoving:Connect\(function\(player\).*?",
+]:
+    require(
+        exit_pattern
+        + r"session\.activePlayer = nil\s*clearSessionPlayerState\(session\)\s*resetRun\(session\)",
+        SERVER,
+        "Racer exit paths must clear player-owned state before publishing an idle cabinet",
+    )
+
 require(
     r"if not globalOk or not personalOk then.*?"
     r"if isCurrentV7RecordUiRequest\(saveEpoch, player\) then\s*"
@@ -2017,8 +2056,8 @@ for token in [
         fail(f"START/FINISH colors must match javascript-racer white/black: {token}")
 
 for token in [
-    "FastLapTime = createValue(folder, \"NumberValue\", \"FastLapTime\", 180)",
-    "fastLapTime = 180",
+    "FastLapTime = createValue(folder, \"NumberValue\", \"FastLapTime\", DEFAULT_FAST_LAP_TIME)",
+    "fastLapTime = DEFAULT_FAST_LAP_TIME",
     "session.trafficOffsets = RacerConfig.baseTrafficOffsets()",
     "local playerSegmentIndex = math.floor(RacerConfig.PlayerZ / RacerConfig.SegmentLength)",
     "if index == playerSegmentIndex + 2 or index == playerSegmentIndex + 3 then",
