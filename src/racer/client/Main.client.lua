@@ -58,6 +58,8 @@ local useTextureArt = true
 local useSpriteboxDebug = false
 local useCollisionboxDebug = false
 local avatarImageCache = {}
+local avatarImagePending = {}
+local avatarImageCacheRevision = 0
 local occupantFallbackPalette = {
 	Color3.fromRGB(255, 202, 88),
 	Color3.fromRGB(108, 221, 205),
@@ -144,23 +146,37 @@ local function activeState()
 	return states[screenId]
 end
 
-local function thumbnailForUserId(userId: number): string?
+local function requestThumbnailForUserId(userId: number)
+	if userId <= 0 or avatarImageCache[userId] ~= nil or avatarImagePending[userId] == true then
+		return
+	end
+
+	avatarImagePending[userId] = true
+	task.spawn(function()
+		local ok, image, isReady = pcall(function()
+			return Players:GetUserThumbnailAsync(
+				userId,
+				Enum.ThumbnailType.AvatarBust,
+				Enum.ThumbnailSize.Size100x100
+			)
+		end)
+		local hasImage = ok and isReady == true and typeof(image) == "string" and image ~= ""
+		avatarImageCache[userId] = if hasImage then image else false
+		avatarImagePending[userId] = nil
+		avatarImageCacheRevision += 1
+	end)
+end
+
+local function cachedThumbnailForUserId(userId: number): string?
 	if userId <= 0 then
 		return nil
 	end
-	if avatarImageCache[userId] ~= nil then
-		local cached = avatarImageCache[userId]
-		return if cached ~= false then cached else nil
+	local cached = avatarImageCache[userId]
+	if cached == nil then
+		requestThumbnailForUserId(userId)
+		return nil
 	end
-	local ok, image = pcall(function()
-		return Players:GetUserThumbnailAsync(
-			userId,
-			Enum.ThumbnailType.AvatarBust,
-			Enum.ThumbnailSize.Size100x100
-		)
-	end)
-	avatarImageCache[userId] = if ok then image else false
-	return if ok then image else nil
+	return if typeof(cached) == "string" then cached else nil
 end
 
 local function passengerUserIdFor(activeUserId: number): number
@@ -2045,41 +2061,57 @@ local function render(renderer, state)
 		end
 		playerCollisionbox.Visible = RacerConfig.isFinalLike(mode) and useCollisionboxDebug
 	end
-	local showOccupants = RacerConfig.hasDriverOccupants(mode) and state.activeUserId.Value > 0
 	local driverAvatar = renderer.car:FindFirstChild("DriverAvatar")
-	local driverImage = thumbnailForUserId(state.activeUserId.Value)
-	local showDriverAvatar = showOccupants and driverImage ~= nil
-	if driverAvatar and driverAvatar:IsA("ImageLabel") then
-		driverAvatar.Image = driverImage or ""
-		driverAvatar.Visible = showDriverAvatar
-		driverAvatar.Position = UDim2.new(0.34 + steer * 0.035, 0, 0.16, 0)
-		driverAvatar.ZIndex = playerDrawZIndex + 5
-	end
-	setOccupantFallback(
-		"DriverFallback",
-		state.activeUserId.Value,
-		1,
-		0.34,
-		showOccupants and not showDriverAvatar
-	)
-
-	local passengerUserId = passengerUserIdFor(state.activeUserId.Value)
-	local passengerImage = thumbnailForUserId(passengerUserId)
-	local showPassengerAvatar = showOccupants and passengerImage ~= nil
 	local passengerAvatar = renderer.car:FindFirstChild("PassengerAvatar")
-	if passengerAvatar and passengerAvatar:IsA("ImageLabel") then
-		passengerAvatar.Image = passengerImage or ""
-		passengerAvatar.Visible = showPassengerAvatar
-		passengerAvatar.Position = UDim2.new(0.52 + steer * 0.035, 0, 0.16, 0)
-		passengerAvatar.ZIndex = playerDrawZIndex + 5
+	if not RacerConfig.hasDriverOccupants(mode) then
+		if driverAvatar and driverAvatar:IsA("ImageLabel") then
+			driverAvatar.Image = ""
+			driverAvatar.Visible = false
+		end
+		if passengerAvatar and passengerAvatar:IsA("ImageLabel") then
+			passengerAvatar.Image = ""
+			passengerAvatar.Visible = false
+		end
+		setOccupantFallback("DriverFallback", 0, 1, 0.34, false)
+		setOccupantFallback("PassengerFallback", 0, 2, 0.52, false)
+	else
+		local activeUserId = state.activeUserId.Value
+		local showOccupants = activeUserId > 0
+		local driverImage = if showOccupants then cachedThumbnailForUserId(activeUserId) else nil
+		local showDriverAvatar = driverImage ~= nil
+		if driverAvatar and driverAvatar:IsA("ImageLabel") then
+			driverAvatar.Image = driverImage or ""
+			driverAvatar.Visible = showDriverAvatar
+			driverAvatar.Position = UDim2.new(0.34 + steer * 0.035, 0, 0.16, 0)
+			driverAvatar.ZIndex = playerDrawZIndex + 5
+		end
+		setOccupantFallback(
+			"DriverFallback",
+			activeUserId,
+			1,
+			0.34,
+			showOccupants and not showDriverAvatar
+		)
+
+		local passengerUserId = if showOccupants then passengerUserIdFor(activeUserId) else 0
+		local passengerImage = if showOccupants
+			then cachedThumbnailForUserId(passengerUserId)
+			else nil
+		local showPassengerAvatar = passengerImage ~= nil
+		if passengerAvatar and passengerAvatar:IsA("ImageLabel") then
+			passengerAvatar.Image = passengerImage or ""
+			passengerAvatar.Visible = showPassengerAvatar
+			passengerAvatar.Position = UDim2.new(0.52 + steer * 0.035, 0, 0.16, 0)
+			passengerAvatar.ZIndex = playerDrawZIndex + 5
+		end
+		setOccupantFallback(
+			"PassengerFallback",
+			passengerUserId,
+			2,
+			0.52,
+			showOccupants and not showPassengerAvatar
+		)
 	end
-	setOccupantFallback(
-		"PassengerFallback",
-		passengerUserId,
-		2,
-		0.52,
-		showOccupants and not showPassengerAvatar
-	)
 
 	if RacerConfig.isFinalLike(mode) and renderer.statusEnabled ~= false then
 		renderer.status.Visible = true
@@ -2113,6 +2145,7 @@ local function renderSignature(state): string
 		if textureArtEnabled() then "textures" else "placeholders",
 		if useSpriteboxDebug then "spriteboxes" else "no-spriteboxes",
 		if useCollisionboxDebug then "collisionboxes" else "no-collisionboxes",
+		if RacerConfig.hasDriverOccupants(state.mode.Value) then avatarImageCacheRevision else 0,
 		v7BillboardText.Value,
 		math.floor(state.currentLapTime.Value * 10 + 0.5),
 		math.floor(state.lastLapTime.Value * 10 + 0.5),

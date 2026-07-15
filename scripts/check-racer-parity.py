@@ -569,7 +569,7 @@ for token in [
 
 for token in [
     'ReplicatedStorage:WaitForChild("RacerV7BillboardText")',
-    "RacerConfig.hasDriverOccupants(mode) and state.activeUserId.Value > 0",
+    "if not RacerConfig.hasDriverOccupants(mode) then",
     'createOccupantFallback(car, "DriverFallback", PLAYER_CAR_Z_INDEX + 4)',
     'createOccupantFallback(car, "PassengerFallback", PLAYER_CAR_Z_INDEX + 4)',
     "fallbackOccupantColor(userId, seatIndex)",
@@ -577,6 +577,52 @@ for token in [
 ]:
     if token not in CLIENT:
         fail(f"client must gate driver and record-board features by version flags: {token}")
+
+for token in [
+    "local avatarImagePending = {}",
+    "local avatarImageCacheRevision = 0",
+    "local function requestThumbnailForUserId(userId: number)",
+    "or avatarImagePending[userId] == true",
+    "avatarImagePending[userId] = true\n\ttask.spawn(function()",
+    "avatarImageCache[userId] = if hasImage then image else false",
+    "avatarImagePending[userId] = nil",
+    "local function cachedThumbnailForUserId(userId: number): string?",
+    "requestThumbnailForUserId(userId)",
+    'driverAvatar.Image = ""\n\t\t\tdriverAvatar.Visible = false',
+    'passengerAvatar.Image = ""\n\t\t\tpassengerAvatar.Visible = false',
+    'setOccupantFallback("DriverFallback", 0, 1, 0.34, false)',
+    'setOccupantFallback("PassengerFallback", 0, 2, 0.52, false)',
+    "local driverImage = if showOccupants then cachedThumbnailForUserId(activeUserId) else nil",
+    "local passengerUserId = if showOccupants then passengerUserIdFor(activeUserId) else 0",
+    "then cachedThumbnailForUserId(passengerUserId)",
+    "showOccupants and not showDriverAvatar",
+    "showOccupants and not showPassengerAvatar",
+    "if RacerConfig.hasDriverOccupants(state.mode.Value) then avatarImageCacheRevision else 0",
+]:
+    if token not in CLIENT:
+        fail(f"v6+ occupant thumbnails must be async, cached, and preserve pending fallbacks: {token}")
+
+if CLIENT.count("Players:GetUserThumbnailAsync(") != 1:
+    fail("occupant thumbnails must have exactly one request site")
+if CLIENT.count("requestThumbnailForUserId(") != 2:
+    fail("occupant thumbnail requests must only start through the non-yielding cache helper")
+if CLIENT.count("cachedThumbnailForUserId(") != 3:
+    fail("only the v6+ driver and passenger paths may resolve occupant thumbnails")
+
+occupant_gate = re.search(
+    r"if not RacerConfig\.hasDriverOccupants\(mode\) then(.*?)\n\telse(.*?)\n\tend\n\n\tif RacerConfig\.isFinalLike",
+    CLIENT,
+    re.DOTALL,
+)
+if not occupant_gate:
+    fail("occupant rendering must have an explicit pre-v6 reset branch")
+legacy_occupant_branch, enabled_occupant_branch = occupant_gate.groups()
+for forbidden in ["cachedThumbnailForUserId(", "passengerUserIdFor("]:
+    if forbidden in legacy_occupant_branch:
+        fail(f"v1-v5 must never request or resolve occupant users: {forbidden}")
+for required in ["cachedThumbnailForUserId(activeUserId)", "cachedThumbnailForUserId(passengerUserId)"]:
+    if required not in enabled_occupant_branch:
+        fail(f"v6+ occupant branch must request cached thumbnails without yielding render: {required}")
 
 for token in [
     'recordBillboardText.Name = "RacerV7BillboardText"',
