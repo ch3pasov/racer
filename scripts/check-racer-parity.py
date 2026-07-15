@@ -679,7 +679,11 @@ for token in [
 if "ARG TARGETARCH=" in DOCKERFILE or "ARG AFTMAN_" in DOCKERFILE:
     fail("Docker must not default its architecture or expose overridable Aftman hashes")
 for token in [
-    "RUN /usr/sbin/groupadd --gid 1000 codex",
+    "/usr/bin/getent group 1000",
+    "/usr/sbin/groupadd --gid 1000 codex",
+    "/usr/sbin/groupmod --new-name codex",
+    "/usr/bin/getent passwd 1000",
+    "/usr/sbin/usermod",
     "--uid 1000",
     "--gid codex",
     "--create-home",

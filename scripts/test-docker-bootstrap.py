@@ -220,14 +220,21 @@ def check_static_contract() -> None:
             "Dockerfile must verify archive, extracted binary, and installed Aftman "
             "in that order"
         )
-    user_group = f"RUN /usr/sbin/groupadd --gid {CONTAINER_GID} codex"
+    group_lookup = f"/usr/bin/getent group {CONTAINER_GID}"
+    group_fallback = f"/usr/sbin/groupadd --gid {CONTAINER_GID} codex"
+    group_reuse = "/usr/sbin/groupmod --new-name codex"
+    user_lookup = f"/usr/bin/getent passwd {CONTAINER_UID}"
     aftman_home_create = (
         "/usr/bin/install -d -m 0755 -o codex -g codex "
         f"{CONTAINER_HOME}/.aftman"
     )
     home_environment = f'ENV HOME="{CONTAINER_HOME}"'
     for token in (
-        user_group,
+        group_lookup,
+        group_fallback,
+        group_reuse,
+        user_lookup,
+        "/usr/sbin/usermod",
         f"--uid {CONTAINER_UID}",
         "--gid codex",
         "--create-home",
@@ -235,7 +242,10 @@ def check_static_contract() -> None:
         home_environment,
     ):
         if token not in dockerfile:
-            fail("Dockerfile must create the deterministic non-root tool owner and home")
+            fail(
+                "Dockerfile must create or safely reuse the deterministic "
+                "non-root tool owner and home"
+            )
     aftman_home_index = dockerfile.index(aftman_home_create)
     user_index = dockerfile.index("USER codex")
     if aftman_home_index >= user_index:
