@@ -55,18 +55,22 @@ for token in [
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
     'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
     'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
+    'PENDING_REF="refs/racer-publish/pending"',
     'RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"',
+    "require_pending_ref_absent",
     '"${STATE_HELPER}" assert-absent',
     'PRIVATE_ARTIFACT="${TEMP_ROOT}/racer.rbxlx"',
     'atomic_install_artifact',
     'require_release_state',
     'if [[ "${BUILD_ONLY}" == "true" ]]; then',
+    "create_pending_ref",
     'create_pending_state "studio"',
     "hashlib.sha256",
     'echo "Commit: ${GIT_COMMIT}"',
     'echo "SHA-256: ${BUILD_SHA256}"',
     'payload.get("versionNumber")',
-    'update-ref "refs/tags/${PREFLIGHT_TAG}"',
+    'symbolic-ref -q "${PENDING_REF}"',
+    'update-ref --no-deref "${PENDING_REF}" "${GIT_COMMIT}" ""',
     'create_pending_state "open-cloud"',
     '"${STATE_HELPER}" validate-artifact',
     "curl --disable --fail-with-body",
@@ -106,6 +110,7 @@ crlf_check_index = PUBLISH_SCRIPT.index(
 script_dir_index = PUBLISH_SCRIPT.index('SCRIPT_DIR="$(cd --')
 snapshot_build_index = PUBLISH_SCRIPT.index('"${BUILD_HELPER}" \\')
 pending_guard_index = PUBLISH_SCRIPT.index('"${STATE_HELPER}" assert-absent')
+pending_ref_guard_index = PUBLISH_SCRIPT.index("\nrequire_pending_ref_absent\n")
 install_index = PUBLISH_SCRIPT.index("atomic_install_artifact", snapshot_build_index)
 build_only_index = PUBLISH_SCRIPT.index(
     'if [[ "${BUILD_ONLY}" == "true" ]]; then', install_index
@@ -116,7 +121,9 @@ universe_index = PUBLISH_SCRIPT.index(
 )
 curl_index = PUBLISH_SCRIPT.index("curl --disable --fail-with-body")
 studio_pending_index = PUBLISH_SCRIPT.index('create_pending_state "studio"')
+studio_ref_index = PUBLISH_SCRIPT.index("create_pending_ref", build_only_index)
 cloud_pending_index = PUBLISH_SCRIPT.index('create_pending_state "open-cloud"')
+cloud_ref_index = PUBLISH_SCRIPT.index("create_pending_ref", universe_index)
 manifest_recheck_index = PUBLISH_SCRIPT.index(
     '"${STATE_HELPER}" validate-artifact', cloud_pending_index
 )
@@ -124,11 +131,8 @@ record_version_index = PUBLISH_SCRIPT.index(
     '"${STATE_HELPER}" record-version "${PLACE_VERSION}"'
 )
 finalizer_index = PUBLISH_SCRIPT.index('"${FINALIZER}" "${PLACE_VERSION}"')
-preflight_delete_index = PUBLISH_SCRIPT.index(
-    'update-ref -d "refs/tags/${PREFLIGHT_TAG}"'
-)
 network_recheck_index = PUBLISH_SCRIPT.index(
-    "require_release_state", preflight_delete_index
+    "require_release_state", universe_index
 )
 if not (
     xtrace_index
@@ -143,15 +147,17 @@ if not (
     < captured_key_unset_index
     < crlf_check_index
     < script_dir_index
+    < pending_ref_guard_index
     < pending_guard_index
     < snapshot_build_index
     < install_index
     < build_only_index
+    < studio_ref_index
     < studio_pending_index
     < build_only_exit_index
     < universe_index
-    < preflight_delete_index
     < network_recheck_index
+    < cloud_ref_index
     < cloud_pending_index
     < manifest_recheck_index
     < curl_index
@@ -285,6 +291,9 @@ for token in [
     'test_reproducible_artifact_integrity(parent)',
     'test_conflict_and_crash_resume(parent)',
     'test_lookup_failure_resume(parent)',
+    'test_recovery_ref_reachability(parent)',
+    'test_recovery_ref_crash_resume(parent)',
+    'test_recovery_ref_guards(parent)',
     'test_mismatches_and_corruption(parent)',
     'test_atomic_state_operations(parent)',
     'mutate_after_state_create=True',
@@ -294,6 +303,9 @@ for token in [
     'bless_current_artifact_in_manifest(extra)',
     'UnexpectedGameplay',
     'valid Studio finalization did not rebuild the artifact once',
+    '"gc", "--prune=now"',
+    'simulated ref deletion crash state was not constructed',
+    'symbolic recovery ref failure changed its target branch',
 ]:
     if token not in PUBLISH_RECOVERY_TEST:
         fail(f"Pending publish recovery coverage is missing: {token}")
@@ -305,6 +317,7 @@ for token in [
     '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
     'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
     'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
+    'PENDING_REF="refs/racer-publish/pending"',
     'RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
     '"${STATE_HELPER}" inspect',
@@ -319,6 +332,10 @@ for token in [
     '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
     'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     'refs/tags/${TAG}^{commit}',
+    'symbolic-ref -q "${PENDING_REF}"',
+    'require_pending_ref_state',
+    'update-ref --no-deref -d "${PENDING_REF}" "${GIT_COMMIT}"',
+    "delete_pending_ref",
     '"${STATE_HELPER}" clear \\',
     '--artifact-sha256 "${ARTIFACT_SHA256}"',
 ]:
@@ -350,6 +367,16 @@ tag_create_index = FINALIZE_SCRIPT.index(
     'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     second_artifact_recheck_index,
 )
+lookup_index = FINALIZE_SCRIPT.index('LOOKUP_OUTPUT="$("${LOOKUP_SCRIPT}"', tag_create_index)
+final_ref_recheck_index = FINALIZE_SCRIPT.index(
+    "require_pending_ref_state", lookup_index
+)
+delete_ref_call_index = FINALIZE_SCRIPT.index(
+    "delete_pending_ref", final_ref_recheck_index
+)
+clear_state_index = FINALIZE_SCRIPT.index(
+    '"${STATE_HELPER}" clear \\', delete_ref_call_index
+)
 if not (
     manifest_validation_index
     < rebuild_index
@@ -359,10 +386,15 @@ if not (
     < record_version_index
     < second_artifact_recheck_index
     < tag_create_index
+    < lookup_index
+    < final_ref_recheck_index
+    < delete_ref_call_index
+    < clear_state_index
 ):
     fail(
         "Studio finalizer must reproducibly rebuild and byte-compare before recording, "
-        "then recheck the original artifact before tag creation"
+        "then recheck the original artifact before tag creation and retire its recovery "
+        "ref only after exact lookup"
     )
 
 if FINALIZE_SCRIPT.count("require_original_artifact_state") < 3:
@@ -377,7 +409,7 @@ for forbidden in [
     "git_repo tag ",
     "git tag ",
     "tag -f",
-    "update-ref -d",
+    'update-ref -d "refs/tags/',
     "--force",
 ]:
     if forbidden in FINALIZE_SCRIPT:

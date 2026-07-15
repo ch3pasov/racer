@@ -49,10 +49,124 @@ BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"
 STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"
 FINALIZER="${SCRIPT_DIR}/finalize-studio-publish.sh"
 PENDING_LABEL="build/racer-publish-pending.json"
+PENDING_REF="refs/racer-publish/pending"
 RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"
 
 git_repo() {
   git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
+}
+
+PENDING_REF_COMMIT=""
+
+pending_ref_storage_exists() {
+  local loose_path
+  local packed_path
+  local object_id
+  local ref_name
+  local remainder
+
+  if ! loose_path="$(git_repo rev-parse --git-path "${PENDING_REF}")"; then
+    return 2
+  fi
+  if [[ -e "${loose_path}" || -L "${loose_path}" ]]; then
+    return 0
+  fi
+  if ! packed_path="$(git_repo rev-parse --git-path packed-refs)"; then
+    return 2
+  fi
+  if [[ -f "${packed_path}" ]]; then
+    while read -r object_id ref_name remainder; do
+      if [[ "${ref_name:-}" == "${PENDING_REF}" ]]; then
+        return 0
+      fi
+    done < "${packed_path}"
+  fi
+  return 1
+}
+
+inspect_pending_ref() {
+  local object_id
+  local status
+  local resolved_commit
+  local symbolic_target
+
+  if symbolic_target="$(git_repo symbolic-ref -q "${PENDING_REF}" 2>/dev/null)"; then
+    echo "Racer pending recovery ref must not be symbolic (${symbolic_target})." >&2
+    return 2
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 1 ]]; then
+    echo "Racer pending recovery ref symbolic state could not be inspected." >&2
+    return 2
+  fi
+
+  if object_id="$(git_repo show-ref --verify --hash "${PENDING_REF}" 2>/dev/null)"; then
+    if [[ ! "${object_id}" =~ ^[0-9a-f]{40}$ ]]; then
+      echo "Racer pending recovery ref has an invalid object id." >&2
+      return 2
+    fi
+    if ! resolved_commit="$(git_repo rev-parse --verify "${PENDING_REF}^{commit}" 2>/dev/null)"; then
+      echo "Racer pending recovery ref does not point directly to a commit." >&2
+      return 2
+    fi
+    if [[ "${resolved_commit}" != "${object_id}" ]]; then
+      echo "Racer pending recovery ref must point directly to its release commit." >&2
+      return 2
+    fi
+    PENDING_REF_COMMIT="${object_id}"
+    return 0
+  else
+    status=$?
+  fi
+
+  PENDING_REF_COMMIT=""
+  if pending_ref_storage_exists; then
+    echo "Racer pending recovery ref is unreadable or invalid." >&2
+    return 2
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 1 ]]; then
+    echo "Racer pending recovery ref storage could not be inspected." >&2
+    return 2
+  fi
+  return 1
+}
+
+require_pending_ref_absent() {
+  local status
+
+  if inspect_pending_ref; then
+    echo "A Racer publish recovery ref already exists at ${PENDING_REF}." >&2
+    echo "Finalize its pending publish before building or publishing again." >&2
+    exit 1
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 1 ]]; then
+    exit 1
+  fi
+}
+
+create_pending_ref() {
+  local status
+
+  if ! git_repo update-ref --no-deref "${PENDING_REF}" "${GIT_COMMIT}" ""; then
+    echo "Failed to create the Racer pending recovery ref atomically." >&2
+    exit 1
+  fi
+  if inspect_pending_ref; then
+    if [[ "${PENDING_REF_COMMIT}" != "${GIT_COMMIT}" ]]; then
+      echo "Racer pending recovery ref does not match the release commit." >&2
+      exit 1
+    fi
+    return
+  else
+    status=$?
+  fi
+  echo "Racer pending recovery ref could not be verified after creation." >&2
+  exit "${status}"
 }
 
 sha256_file() {
@@ -129,6 +243,8 @@ if ! mkdir "${RELEASE_LOCK_DIR}"; then
 fi
 RELEASE_LOCK_HELD="true"
 
+# A manifest and its private git recovery ref must both be absent before a new build.
+require_pending_ref_absent
 # Any state file, including a corrupt one, blocks before the artifact can be rebuilt.
 "${STATE_HELPER}" assert-absent
 
@@ -213,6 +329,7 @@ atomic_install_artifact
 require_installed_artifact
 
 if [[ "${BUILD_ONLY}" == "true" ]]; then
+  create_pending_ref
   create_pending_state "studio"
   echo "Built ${OUTPUT_LABEL} for Racer place ${PLACE_ID}"
   echo "Commit: ${GIT_COMMIT}"
@@ -227,16 +344,9 @@ if [[ ! "${ROBLOX_UNIVERSE_ID}" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 
-PREFLIGHT_TAG="racer-publish-preflight-$$"
-if git_repo rev-parse --verify --quiet "refs/tags/${PREFLIGHT_TAG}" >/dev/null; then
-  echo "Temporary publish preflight tag unexpectedly exists: ${PREFLIGHT_TAG}." >&2
-  exit 1
-fi
-git_repo update-ref "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}" ""
-git_repo update-ref -d "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}"
-
 require_release_state
 require_installed_artifact
+create_pending_ref
 create_pending_state "open-cloud"
 
 # The POST must still match both the private snapshot and the durable manifest.

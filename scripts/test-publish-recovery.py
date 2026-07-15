@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RACER_PLACE_ID = "123630607312596"
 LOBBY_PLACE_ID = "93743736131610"
 UNIVERSE_ID = "701234567890123"
+PENDING_REF = "refs/racer-publish/pending"
 API_SENTINEL = "pending-state-secret-" + hashlib.sha256(
     b"racer-pending-publish-recovery"
 ).hexdigest()
@@ -70,6 +71,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -95,6 +97,16 @@ if pending["mode"] != "open-cloud" or pending["state"] != "prepared":
     fail("POST did not observe PREPARED open-cloud state")
 if pending["placeVersion"] is not None:
     fail("PlaceVersion was recorded before the response")
+try:
+    recovery_commit = subprocess.check_output(
+        ["git", "rev-parse", "refs/racer-publish/pending^{commit}"],
+        text=True,
+        stderr=subprocess.DEVNULL,
+    ).strip()
+except subprocess.CalledProcessError:
+    fail("POST did not observe the pending recovery ref")
+if recovery_commit != pending["gitCommit"]:
+    fail("pending recovery ref did not match the manifest commit")
 
 data_arguments = [
     sys.argv[index + 1]
@@ -324,6 +336,32 @@ fi
         )
         return result.returncode == 0
 
+    def pending_ref_commit(self) -> str:
+        return git(
+            self.repo,
+            "rev-parse",
+            f"{PENDING_REF}^{{commit}}",
+            capture=True,
+        )
+
+    def pending_ref_exists(self) -> bool:
+        result = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={self.repo}",
+                "-C",
+                str(self.repo),
+                "show-ref",
+                "--verify",
+                "--quiet",
+                PENDING_REF,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.returncode == 0
+
 
 def require_success(result: subprocess.CompletedProcess[str], context: str) -> None:
     if result.returncode != 0:
@@ -362,6 +400,8 @@ def test_success(parent: Path) -> None:
     require_success(result, "successful Open Cloud publish")
     if fixture.pending.exists():
         raise RuntimeError("successful publish retained pending state")
+    if fixture.pending_ref_exists():
+        raise RuntimeError("successful publish retained its recovery ref")
     if fixture.tag_commit(version) != fixture.release_commit:
         raise RuntimeError("successful publish tagged the wrong commit")
     if line_count(fixture.curl_log) != 1:
@@ -379,6 +419,8 @@ def test_failed_request_and_retry(parent: Path) -> None:
         raise RuntimeError("connection loss did not retain PREPARED state")
     if API_SENTINEL.encode() in fixture.pending.read_bytes():
         raise RuntimeError("failed publish persisted the API key")
+    if fixture.pending_ref_commit() != fixture.release_commit:
+        raise RuntimeError("failed publish did not retain its recovery ref")
     artifact_hash = hashlib.sha256(fixture.artifact.read_bytes()).hexdigest()
     curl_calls = line_count(fixture.curl_log)
     rojo_calls = line_count(fixture.rojo_log)
@@ -392,7 +434,11 @@ def test_failed_request_and_retry(parent: Path) -> None:
 
     recovery = fixture.finalize("700102")
     require_success(recovery, "manual recovery after connection loss")
-    if fixture.pending.exists() or fixture.tag_commit("700102") != fixture.release_commit:
+    if (
+        fixture.pending.exists()
+        or fixture.pending_ref_exists()
+        or fixture.tag_commit("700102") != fixture.release_commit
+    ):
         raise RuntimeError("manual recovery did not tag and clear")
 
 
@@ -404,6 +450,8 @@ def test_invalid_responses(parent: Path) -> None:
         state = fixture.load_state()
         if state["state"] != "prepared" or state["placeVersion"] is not None:
             raise RuntimeError(f"invalid response {mode} did not retain PREPARED state")
+        if fixture.pending_ref_commit() != fixture.release_commit:
+            raise RuntimeError(f"invalid response {mode} lost its recovery ref")
         if line_count(fixture.curl_log) != 1:
             raise RuntimeError(f"invalid response {mode} did not issue exactly one POST")
 
@@ -415,6 +463,8 @@ def test_build_only(parent: Path) -> None:
     state = fixture.load_state()
     if state["mode"] != "studio" or state["universeId"] is not None:
         raise RuntimeError("build-only did not create Studio PREPARED state")
+    if fixture.pending_ref_commit() != fixture.release_commit:
+        raise RuntimeError("build-only did not retain its recovery ref")
     if line_count(fixture.curl_log) != 0:
         raise RuntimeError("build-only called curl")
     artifact_hash = hashlib.sha256(fixture.artifact.read_bytes()).hexdigest()
@@ -431,6 +481,8 @@ def test_build_only(parent: Path) -> None:
         raise RuntimeError("valid Studio finalization did not rebuild the artifact once")
     if fixture.pending.exists():
         raise RuntimeError("Studio finalization did not clear pending state")
+    if fixture.pending_ref_exists():
+        raise RuntimeError("Studio finalization did not clear its recovery ref")
 
 
 def test_reproducible_artifact_integrity(parent: Path) -> None:
@@ -501,6 +553,8 @@ def test_conflict_and_crash_resume(parent: Path) -> None:
     state = conflict.load_state()
     if state["state"] != "version-recorded" or state["gitCommit"] != release_commit:
         raise RuntimeError("tag conflict did not retain recorded recovery state")
+    if conflict.pending_ref_commit() != release_commit:
+        raise RuntimeError("tag conflict did not retain its recovery ref")
     git(
         conflict.repo,
         "update-ref",
@@ -509,6 +563,8 @@ def test_conflict_and_crash_resume(parent: Path) -> None:
         conflicting_commit,
     )
     require_success(conflict.finalize("700130"), "conflict recovery")
+    if conflict.pending_ref_exists():
+        raise RuntimeError("conflict recovery retained its recovery ref")
 
     resume = Fixture(parent, "same-tag-resume")
     require_success(resume.build_only(), "resume fixture build-only")
@@ -522,7 +578,11 @@ def test_conflict_and_crash_resume(parent: Path) -> None:
     )
     git(resume.repo, "commit", "--quiet", "--allow-empty", "-m", "head advanced")
     require_success(resume.finalize("700131"), "same-tag crash resume")
-    if resume.pending.exists() or resume.tag_commit("700131") != release_commit:
+    if (
+        resume.pending.exists()
+        or resume.pending_ref_exists()
+        or resume.tag_commit("700131") != release_commit
+    ):
         raise RuntimeError("same-tag crash resume did not preserve the release commit")
 
 
@@ -536,6 +596,8 @@ def test_lookup_failure_resume(parent: Path) -> None:
         raise RuntimeError("lookup failure did not retain VERSION_RECORDED state")
     if fixture.tag_commit(version) != fixture.release_commit:
         raise RuntimeError("lookup failure fixture did not reach tag creation")
+    if fixture.pending_ref_commit() != fixture.release_commit:
+        raise RuntimeError("lookup failure did not retain its recovery ref")
 
     shutil.copy2(
         ROOT / "scripts/lookup-place-version.sh",
@@ -544,8 +606,172 @@ def test_lookup_failure_resume(parent: Path) -> None:
     git(fixture.repo, "add", "scripts/lookup-place-version.sh")
     git(fixture.repo, "commit", "--quiet", "-m", "restore lookup")
     require_success(fixture.finalize(version), "lookup crash resume")
-    if fixture.pending.exists():
-        raise RuntimeError("lookup crash resume did not clear pending state")
+    if fixture.pending.exists() or fixture.pending_ref_exists():
+        raise RuntimeError("lookup crash resume did not clear pending recovery state")
+
+
+def test_recovery_ref_reachability(parent: Path) -> None:
+    fixture = Fixture(parent, "recovery-ref-gc")
+    version = "700141"
+    require_success(fixture.build_only(), "recovery ref GC fixture build-only")
+    release_commit = fixture.release_commit
+    release_tree = git(
+        fixture.repo, "rev-parse", f"{release_commit}^{{tree}}", capture=True
+    )
+    unrelated_commit = git(
+        fixture.repo,
+        "commit-tree",
+        release_tree,
+        "-m",
+        "unrelated same-tree root",
+        capture=True,
+    )
+    if unrelated_commit == release_commit:
+        raise RuntimeError("unrelated recovery fixture unexpectedly reused the release commit")
+    git(fixture.repo, "reset", "--hard", unrelated_commit)
+    git(
+        fixture.repo,
+        "reflog",
+        "expire",
+        "--expire=now",
+        "--expire-unreachable=now",
+        "--all",
+    )
+    git(fixture.repo, "gc", "--prune=now")
+    git(fixture.repo, "cat-file", "-e", f"{release_commit}^{{commit}}")
+    if fixture.pending_ref_commit() != release_commit:
+        raise RuntimeError("recovery ref did not preserve the unreachable release commit")
+
+    require_success(fixture.finalize(version), "finalize after unrelated-root GC")
+    if (
+        fixture.pending.exists()
+        or fixture.pending_ref_exists()
+        or fixture.tag_commit(version) != release_commit
+    ):
+        raise RuntimeError("GC recovery did not replace the private ref with the publish tag")
+
+
+def test_recovery_ref_crash_resume(parent: Path) -> None:
+    fixture = Fixture(parent, "recovery-ref-delete-crash")
+    version = "700142"
+    require_success(fixture.build_only(), "ref deletion crash fixture build-only")
+    payload = fixture.load_state()
+    artifact = payload["artifact"]
+    if not isinstance(artifact, dict):
+        raise RuntimeError("ref deletion crash fixture artifact was not an object")
+    record = fixture.run(
+        [
+            str(fixture.state_helper),
+            "record-version",
+            version,
+            "--git-commit",
+            fixture.release_commit,
+            "--artifact-sha256",
+            str(artifact["sha256"]),
+        ]
+    )
+    require_success(record, "record before simulated ref deletion crash")
+    git(
+        fixture.repo,
+        "update-ref",
+        f"refs/tags/racer-place-v{version}",
+        fixture.release_commit,
+        "",
+    )
+    git(
+        fixture.repo,
+        "update-ref",
+        "-d",
+        PENDING_REF,
+        fixture.release_commit,
+    )
+    if not fixture.pending.exists() or fixture.pending_ref_exists():
+        raise RuntimeError("simulated ref deletion crash state was not constructed")
+
+    require_success(fixture.finalize(version), "resume after recovery ref deletion")
+    if (
+        fixture.pending.exists()
+        or fixture.pending_ref_exists()
+        or fixture.tag_commit(version) != fixture.release_commit
+    ):
+        raise RuntimeError("ref deletion crash resume was not idempotent")
+
+
+def test_recovery_ref_guards(parent: Path) -> None:
+    orphan = Fixture(parent, "orphan-recovery-ref")
+    git(
+        orphan.repo,
+        "update-ref",
+        PENDING_REF,
+        orphan.release_commit,
+        "",
+    )
+    result = orphan.publish("success", "700143")
+    require_failure(result, "publisher with orphan recovery ref")
+    if line_count(orphan.rojo_log) or line_count(orphan.curl_log):
+        raise RuntimeError("orphan recovery ref refusal reached Rojo or curl")
+    if orphan.pending.exists() or orphan.pending_ref_commit() != orphan.release_commit:
+        raise RuntimeError("orphan recovery ref refusal changed recovery state")
+
+    foreign = Fixture(parent, "foreign-recovery-ref")
+    require_success(foreign.build_only(), "foreign recovery ref fixture build-only")
+    git(foreign.repo, "commit", "--quiet", "--allow-empty", "-m", "foreign commit")
+    foreign_commit = git(foreign.repo, "rev-parse", "HEAD", capture=True)
+    git(
+        foreign.repo,
+        "update-ref",
+        PENDING_REF,
+        foreign_commit,
+        foreign.release_commit,
+    )
+    require_failure(foreign.finalize("700144"), "foreign recovery ref finalizer")
+    if not foreign.pending.exists() or foreign.pending_ref_commit() != foreign_commit:
+        raise RuntimeError("foreign recovery ref failure did not fail closed")
+
+    noncommit = Fixture(parent, "noncommit-recovery-ref")
+    require_success(noncommit.build_only(), "noncommit recovery ref fixture build-only")
+    tree_id = git(noncommit.repo, "rev-parse", "HEAD^{tree}", capture=True)
+    git(
+        noncommit.repo,
+        "update-ref",
+        PENDING_REF,
+        tree_id,
+        noncommit.release_commit,
+    )
+    require_failure(noncommit.finalize("700145"), "noncommit recovery ref finalizer")
+    if not noncommit.pending.exists() or not noncommit.pending_ref_exists():
+        raise RuntimeError("noncommit recovery ref failure did not retain state")
+
+    corrupt = Fixture(parent, "corrupt-recovery-ref")
+    require_success(corrupt.build_only(), "corrupt recovery ref fixture build-only")
+    corrupt_ref_path = corrupt.repo / ".git/refs/racer-publish/pending"
+    if not corrupt_ref_path.is_file():
+        raise RuntimeError("corrupt recovery ref fixture did not create a loose ref")
+    corrupt_ref_path.write_text("not-an-object-id\n")
+    require_failure(corrupt.finalize("700146"), "corrupt recovery ref finalizer")
+    if not corrupt.pending.exists() or not corrupt_ref_path.exists():
+        raise RuntimeError("corrupt recovery ref failure did not fail closed")
+
+    symbolic = Fixture(parent, "symbolic-recovery-ref")
+    require_success(symbolic.build_only(), "symbolic recovery ref fixture build-only")
+    head_ref = git(symbolic.repo, "symbolic-ref", "HEAD", capture=True)
+    head_commit = git(symbolic.repo, "rev-parse", head_ref, capture=True)
+    git(
+        symbolic.repo,
+        "update-ref",
+        "--no-deref",
+        "-d",
+        PENDING_REF,
+        symbolic.release_commit,
+    )
+    git(symbolic.repo, "symbolic-ref", PENDING_REF, head_ref)
+    require_failure(symbolic.finalize("700147"), "symbolic recovery ref finalizer")
+    if git(symbolic.repo, "symbolic-ref", PENDING_REF, capture=True) != head_ref:
+        raise RuntimeError("symbolic recovery ref failure changed the recovery symref")
+    if git(symbolic.repo, "rev-parse", head_ref, capture=True) != head_commit:
+        raise RuntimeError("symbolic recovery ref failure changed its target branch")
+    if not symbolic.pending.exists() or symbolic.tag_exists("700147"):
+        raise RuntimeError("symbolic recovery ref failure changed publish state")
 
 
 def test_mismatches_and_corruption(parent: Path) -> None:
@@ -692,6 +918,9 @@ def main() -> None:
         test_reproducible_artifact_integrity(parent)
         test_conflict_and_crash_resume(parent)
         test_lookup_failure_resume(parent)
+        test_recovery_ref_reachability(parent)
+        test_recovery_ref_crash_resume(parent)
+        test_recovery_ref_guards(parent)
         test_mismatches_and_corruption(parent)
         test_atomic_state_operations(parent)
     print("Pending Racer publish recovery tests passed")

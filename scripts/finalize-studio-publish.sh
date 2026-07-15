@@ -9,12 +9,152 @@ STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"
 BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"
 LOOKUP_SCRIPT="${SCRIPT_DIR}/lookup-place-version.sh"
 PENDING_LABEL="build/racer-publish-pending.json"
+PENDING_REF="refs/racer-publish/pending"
 RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"
 RELEASE_LOCK_HELD="false"
 TEMP_ROOT=""
 
 git_repo() {
   git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
+}
+
+PENDING_REF_COMMIT=""
+PENDING_REF_EXPECTED_PRESENT="false"
+
+pending_ref_storage_exists() {
+  local loose_path
+  local packed_path
+  local object_id
+  local ref_name
+  local remainder
+
+  if ! loose_path="$(git_repo rev-parse --git-path "${PENDING_REF}")"; then
+    return 2
+  fi
+  if [[ -e "${loose_path}" || -L "${loose_path}" ]]; then
+    return 0
+  fi
+  if ! packed_path="$(git_repo rev-parse --git-path packed-refs)"; then
+    return 2
+  fi
+  if [[ -f "${packed_path}" ]]; then
+    while read -r object_id ref_name remainder; do
+      if [[ "${ref_name:-}" == "${PENDING_REF}" ]]; then
+        return 0
+      fi
+    done < "${packed_path}"
+  fi
+  return 1
+}
+
+inspect_pending_ref() {
+  local object_id
+  local status
+  local resolved_commit
+  local symbolic_target
+
+  if symbolic_target="$(git_repo symbolic-ref -q "${PENDING_REF}" 2>/dev/null)"; then
+    echo "Racer pending recovery ref must not be symbolic (${symbolic_target})." >&2
+    return 2
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 1 ]]; then
+    echo "Racer pending recovery ref symbolic state could not be inspected." >&2
+    return 2
+  fi
+
+  if object_id="$(git_repo show-ref --verify --hash "${PENDING_REF}" 2>/dev/null)"; then
+    if [[ ! "${object_id}" =~ ^[0-9a-f]{40}$ ]]; then
+      echo "Racer pending recovery ref has an invalid object id." >&2
+      return 2
+    fi
+    if ! resolved_commit="$(git_repo rev-parse --verify "${PENDING_REF}^{commit}" 2>/dev/null)"; then
+      echo "Racer pending recovery ref does not point directly to a commit." >&2
+      return 2
+    fi
+    if [[ "${resolved_commit}" != "${object_id}" ]]; then
+      echo "Racer pending recovery ref must point directly to its release commit." >&2
+      return 2
+    fi
+    PENDING_REF_COMMIT="${object_id}"
+    return 0
+  else
+    status=$?
+  fi
+
+  PENDING_REF_COMMIT=""
+  if pending_ref_storage_exists; then
+    echo "Racer pending recovery ref is unreadable or invalid." >&2
+    return 2
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 1 ]]; then
+    echo "Racer pending recovery ref storage could not be inspected." >&2
+    return 2
+  fi
+  return 1
+}
+
+final_tag_points_to_commit() {
+  local tag_commit
+
+  if ! tag_commit="$(git_repo rev-parse --verify "refs/tags/${TAG}^{commit}" 2>/dev/null)"; then
+    return 1
+  fi
+  [[ "${tag_commit}" == "${GIT_COMMIT}" ]]
+}
+
+require_pending_ref_state() {
+  local status
+
+  if inspect_pending_ref; then
+    if [[ "${PENDING_REF_EXPECTED_PRESENT}" != "true" ]]; then
+      echo "Racer pending recovery ref unexpectedly reappeared after deletion." >&2
+      exit 1
+    fi
+    if [[ "${PENDING_REF_COMMIT}" != "${GIT_COMMIT}" ]]; then
+      echo "Racer pending recovery ref does not match the manifest commit." >&2
+      exit 1
+    fi
+    return
+  else
+    status=$?
+  fi
+  if [[ "${status}" -ne 1 ]]; then
+    exit 1
+  fi
+  if [[ "${PENDING_REF_EXPECTED_PRESENT}" == "true" ]]; then
+    echo "Racer pending recovery ref disappeared before finalization completed." >&2
+    exit 1
+  fi
+  if [[ "${RECORDED_PLACE_VERSION}" != "${PLACE_VERSION}" ]] \
+    || ! final_tag_points_to_commit; then
+    echo "Missing recovery ref is valid only after the exact publish tag exists." >&2
+    exit 1
+  fi
+}
+
+delete_pending_ref() {
+  local status
+
+  if [[ "${PENDING_REF_EXPECTED_PRESENT}" == "true" ]]; then
+    if ! git_repo update-ref --no-deref -d "${PENDING_REF}" "${GIT_COMMIT}"; then
+      if inspect_pending_ref; then
+        echo "Failed to delete the Racer pending recovery ref with its commit guard." >&2
+        exit 1
+      else
+        status=$?
+      fi
+      if [[ "${status}" -ne 1 ]] || ! final_tag_points_to_commit; then
+        echo "Racer pending recovery ref deletion could not be verified." >&2
+        exit 1
+      fi
+    fi
+    PENDING_REF_EXPECTED_PRESENT="false"
+  fi
+  require_pending_ref_state
 }
 
 require_clean_tree() {
@@ -123,6 +263,7 @@ UNIVERSE_ID="${MANIFEST_FIELDS[8]}"
 MANIFEST_PLACE_ID="${MANIFEST_FIELDS[9]}"
 LOBBY_PLACE_ID="${MANIFEST_FIELDS[10]}"
 RECORDED_PLACE_VERSION="${MANIFEST_FIELDS[11]}"
+TAG="racer-place-v${PLACE_VERSION}"
 
 if [[ "${PLACE_ID}" != "${MANIFEST_PLACE_ID}" ]]; then
   echo "ROBLOX_RACER_PLACE_ID does not match the pending Racer place." >&2
@@ -139,6 +280,26 @@ fi
 if [[ "${RECORDED_PLACE_VERSION}" != "-" && "${RECORDED_PLACE_VERSION}" != "${PLACE_VERSION}" ]]; then
   echo "Pending publish records PlaceVersion ${RECORDED_PLACE_VERSION}, not ${PLACE_VERSION}." >&2
   exit 1
+fi
+
+PENDING_REF_STATUS=0
+if inspect_pending_ref; then
+  PENDING_REF_EXPECTED_PRESENT="true"
+  if [[ "${PENDING_REF_COMMIT}" != "${GIT_COMMIT}" ]]; then
+    echo "Racer pending recovery ref does not match the manifest commit." >&2
+    exit 1
+  fi
+else
+  PENDING_REF_STATUS=$?
+  if [[ "${PENDING_REF_STATUS}" -ne 1 ]]; then
+    exit 1
+  fi
+  PENDING_REF_EXPECTED_PRESENT="false"
+  if [[ "${RECORDED_PLACE_VERSION}" != "${PLACE_VERSION}" ]] \
+    || ! final_tag_points_to_commit; then
+    echo "Pending recovery ref is missing before its exact publish tag was finalized." >&2
+    exit 1
+  fi
 fi
 
 require_clean_tree
@@ -219,15 +380,17 @@ require_original_artifact_state() {
 }
 
 require_original_artifact_state
+require_pending_ref_state
 
 # Record a manually verified or recovered version before touching its git tag.
 "${STATE_HELPER}" record-version "${PLACE_VERSION}" \
   --git-commit "${GIT_COMMIT}" \
   --artifact-sha256 "${ARTIFACT_SHA256}"
+RECORDED_PLACE_VERSION="${PLACE_VERSION}"
 
 require_original_artifact_state
+require_pending_ref_state
 
-TAG="racer-place-v${PLACE_VERSION}"
 if EXISTING_TAG_COMMIT="$(git_repo rev-parse --verify "refs/tags/${TAG}^{commit}" 2>/dev/null)"; then
   if [[ "${EXISTING_TAG_COMMIT}" != "${GIT_COMMIT}" ]]; then
     echo "Immutable publish tag ${TAG} already points to another commit." >&2
@@ -279,6 +442,11 @@ if [[ "$(git_repo rev-parse "refs/tags/${TAG}^{commit}")" != "${GIT_COMMIT}" ]];
   echo "Publish tag changed before pending state could be cleared." >&2
   exit 1
 fi
+require_pending_ref_state
+
+# The immutable tag now keeps the commit reachable. Delete only the exact
+# recovery ref, then clear its manifest. A retry can resume between these steps.
+delete_pending_ref
 
 "${STATE_HELPER}" clear \
   --git-commit "${GIT_COMMIT}" \
