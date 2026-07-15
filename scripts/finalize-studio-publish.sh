@@ -6,10 +6,12 @@ ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
 STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"
+BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"
 LOOKUP_SCRIPT="${SCRIPT_DIR}/lookup-place-version.sh"
 PENDING_LABEL="build/racer-publish-pending.json"
 RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"
 RELEASE_LOCK_HELD="false"
+TEMP_ROOT=""
 
 git_repo() {
   git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
@@ -24,6 +26,20 @@ require_clean_tree() {
   fi
 }
 
+sha256_file() {
+  TARGET_FILE="$1" python3 -c 'import hashlib
+import os
+from pathlib import Path
+
+print(hashlib.sha256(Path(os.environ["TARGET_FILE"]).read_bytes()).hexdigest())'
+}
+
+file_size() {
+  TARGET_FILE="$1" python3 -c 'import os
+
+print(os.stat(os.environ["TARGET_FILE"], follow_symlinks=False).st_size)'
+}
+
 release_publish_lock() {
   if [[ "${RELEASE_LOCK_HELD}" == "true" ]]; then
     rmdir "${RELEASE_LOCK_DIR}"
@@ -32,6 +48,9 @@ release_publish_lock() {
 }
 
 cleanup() {
+  if [[ -n "${TEMP_ROOT}" ]]; then
+    rm -rf "${TEMP_ROOT}"
+  fi
   release_publish_lock
 }
 trap cleanup EXIT
@@ -65,6 +84,10 @@ fi
 
 if [[ ! -x "${STATE_HELPER}" ]]; then
   echo "Pending publish state helper is missing or not executable." >&2
+  exit 1
+fi
+if [[ ! -x "${BUILD_HELPER}" ]]; then
+  echo "Release snapshot builder is missing or not executable." >&2
   exit 1
 fi
 if [[ ! -x "${LOOKUP_SCRIPT}" ]]; then
@@ -135,16 +158,74 @@ if [[ "${VALIDATED_SHA256}" != "${ARTIFACT_SHA256}" ]]; then
   exit 1
 fi
 
+ARTIFACT_FILE="${ROOT_DIR}/${ARTIFACT_LABEL}"
+if [[ ! -f "${ARTIFACT_FILE}" || -L "${ARTIFACT_FILE}" ]]; then
+  echo "Validated Racer release artifact is missing or is not a regular file." >&2
+  exit 1
+fi
+ORIGINAL_ARTIFACT_SHA256="$(sha256_file "${ARTIFACT_FILE}")"
+ORIGINAL_ARTIFACT_SIZE="$(file_size "${ARTIFACT_FILE}")"
+if [[ "${ORIGINAL_ARTIFACT_SHA256}" != "${ARTIFACT_SHA256}" ]]; then
+  echo "Original Racer artifact SHA-256 does not match its validated manifest." >&2
+  exit 1
+fi
+if [[ "${ORIGINAL_ARTIFACT_SIZE}" != "${ARTIFACT_SIZE}" ]]; then
+  echo "Original Racer artifact size does not match its validated manifest." >&2
+  exit 1
+fi
+
+TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/racer-finalize.XXXXXX")"
+REBUILT_ARTIFACT="${TEMP_ROOT}/racer-rebuilt.rbxlx"
+"${BUILD_HELPER}" \
+  "${GIT_COMMIT}" \
+  "${PUBLISHED_AT}" \
+  "${LOBBY_PLACE_ID}" \
+  "${MANIFEST_PLACE_ID}" \
+  "${REBUILT_ARTIFACT}"
+
+REBUILT_ARTIFACT_SHA256="$(sha256_file "${REBUILT_ARTIFACT}")"
+REBUILT_ARTIFACT_SIZE="$(file_size "${REBUILT_ARTIFACT}")"
+if [[ "${REBUILT_ARTIFACT_SHA256}" != "${ARTIFACT_SHA256}" ]]; then
+  echo "Rebuilt Racer artifact SHA-256 does not match the pending manifest." >&2
+  exit 1
+fi
+if [[ "${REBUILT_ARTIFACT_SIZE}" != "${ARTIFACT_SIZE}" ]]; then
+  echo "Rebuilt Racer artifact size does not match the pending manifest." >&2
+  exit 1
+fi
+if ! cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"; then
+  echo "Racer release artifact is not the exact reproducible build of its pending commit." >&2
+  exit 1
+fi
+
+require_original_artifact_state() {
+  if [[ "$(git_repo rev-parse HEAD)" != "${STARTING_HEAD}" ]]; then
+    echo "HEAD changed while validating the Racer publish." >&2
+    exit 1
+  fi
+  require_clean_tree
+  if [[ ! -f "${ARTIFACT_FILE}" || -L "${ARTIFACT_FILE}" ]]; then
+    echo "Original Racer release artifact is missing or is not a regular file." >&2
+    exit 1
+  fi
+  if [[ "$(file_size "${ARTIFACT_FILE}")" != "${ORIGINAL_ARTIFACT_SIZE}" ]]; then
+    echo "Original Racer release artifact size changed during finalization." >&2
+    exit 1
+  fi
+  if [[ "$(sha256_file "${ARTIFACT_FILE}")" != "${ORIGINAL_ARTIFACT_SHA256}" ]]; then
+    echo "Original Racer release artifact changed during finalization." >&2
+    exit 1
+  fi
+}
+
+require_original_artifact_state
+
 # Record a manually verified or recovered version before touching its git tag.
 "${STATE_HELPER}" record-version "${PLACE_VERSION}" \
   --git-commit "${GIT_COMMIT}" \
   --artifact-sha256 "${ARTIFACT_SHA256}"
 
-if [[ "$(git_repo rev-parse HEAD)" != "${STARTING_HEAD}" ]]; then
-  echo "HEAD changed while validating the Racer publish." >&2
-  exit 1
-fi
-require_clean_tree
+require_original_artifact_state
 
 TAG="racer-place-v${PLACE_VERSION}"
 if EXISTING_TAG_COMMIT="$(git_repo rev-parse --verify "refs/tags/${TAG}^{commit}" 2>/dev/null)"; then

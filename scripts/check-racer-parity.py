@@ -230,12 +230,18 @@ for token in [
     'test_failed_request_and_retry(parent)',
     'test_invalid_responses(parent)',
     'test_build_only(parent)',
+    'test_reproducible_artifact_integrity(parent)',
     'test_conflict_and_crash_resume(parent)',
     'test_lookup_failure_resume(parent)',
     'test_mismatches_and_corruption(parent)',
     'test_atomic_state_operations(parent)',
     'mutate_after_state_create=True',
     'if secret.encode() in raw_pending:',
+    'bless_current_artifact_in_manifest(gameplay)',
+    'VersionBuild = "tampered"',
+    'bless_current_artifact_in_manifest(extra)',
+    'UnexpectedGameplay',
+    'valid Studio finalization did not rebuild the artifact once',
 ]:
     if token not in PUBLISH_RECOVERY_TEST:
         fail(f"Pending publish recovery coverage is missing: {token}")
@@ -246,10 +252,18 @@ if FINALIZE_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
 for token in [
     '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
     'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
+    'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
     'RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
     '"${STATE_HELPER}" inspect',
     '"${STATE_HELPER}" validate-artifact',
+    'ORIGINAL_ARTIFACT_SHA256="$(sha256_file "${ARTIFACT_FILE}")"',
+    'ORIGINAL_ARTIFACT_SIZE="$(file_size "${ARTIFACT_FILE}")"',
+    'REBUILT_ARTIFACT="${TEMP_ROOT}/racer-rebuilt.rbxlx"',
+    'REBUILT_ARTIFACT_SHA256="$(sha256_file "${REBUILT_ARTIFACT}")"',
+    'REBUILT_ARTIFACT_SIZE="$(file_size "${REBUILT_ARTIFACT}")"',
+    'cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"',
+    'require_original_artifact_state',
     '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
     'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     'refs/tags/${TAG}^{commit}',
@@ -258,6 +272,49 @@ for token in [
 ]:
     if token not in FINALIZE_SCRIPT:
         fail(f"Studio publish finalizer contract is missing: {token}")
+
+manifest_validation_index = FINALIZE_SCRIPT.index(
+    'VALIDATED_SHA256="$("${STATE_HELPER}" validate-artifact)"'
+)
+rebuild_index = FINALIZE_SCRIPT.index('"${BUILD_HELPER}" \\', manifest_validation_index)
+rebuilt_sha_index = FINALIZE_SCRIPT.index(
+    'REBUILT_ARTIFACT_SHA256="$(sha256_file "${REBUILT_ARTIFACT}")"',
+    rebuild_index,
+)
+byte_compare_index = FINALIZE_SCRIPT.index(
+    'cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"', rebuilt_sha_index
+)
+first_artifact_recheck_index = FINALIZE_SCRIPT.index(
+    "require_original_artifact_state", byte_compare_index
+)
+record_version_index = FINALIZE_SCRIPT.index(
+    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
+    first_artifact_recheck_index,
+)
+second_artifact_recheck_index = FINALIZE_SCRIPT.index(
+    "require_original_artifact_state", record_version_index
+)
+tag_create_index = FINALIZE_SCRIPT.index(
+    'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
+    second_artifact_recheck_index,
+)
+if not (
+    manifest_validation_index
+    < rebuild_index
+    < rebuilt_sha_index
+    < byte_compare_index
+    < first_artifact_recheck_index
+    < record_version_index
+    < second_artifact_recheck_index
+    < tag_create_index
+):
+    fail(
+        "Studio finalizer must reproducibly rebuild and byte-compare before recording, "
+        "then recheck the original artifact before tag creation"
+    )
+
+if FINALIZE_SCRIPT.count("require_original_artifact_state") < 3:
+    fail("Studio finalizer must guard the original artifact before record and tag")
 
 if FINALIZE_SCRIPT.count("require_clean_tree") < 3:
     fail("Studio publish finalizer must check cleanliness before and after validation")

@@ -45,6 +45,7 @@ output = Path(sys.argv[sys.argv.index("--output") + 1])
 output.parent.mkdir(parents=True, exist_ok=True)
 build_info = Path("src/shared/GeneratedBuildInfo.lua").read_text()
 place_ids = Path("src/shared/GeneratedPlaceIds.lua").read_text()
+gameplay = Path("src/racer/shared/RacerConfig.lua").read_text()
 output.write_text(
     '<roblox version="4">'
     '<Item class="ModuleScript"><Properties>'
@@ -54,6 +55,10 @@ output.write_text(
     '<Item class="ModuleScript"><Properties>'
     '<string name="Name">GeneratedPlaceIds</string>'
     f'<ProtectedString name="Source">{escape(place_ids)}</ProtectedString>'
+    '</Properties></Item>'
+    '<Item class="ModuleScript"><Properties>'
+    '<string name="Name">RacerConfig</string>'
+    f'<ProtectedString name="Source">{escape(gameplay)}</ProtectedString>'
     '</Properties></Item>'
     '</roblox>\n'
 )
@@ -174,6 +179,7 @@ class Fixture:
             "scripts/lookup-place-version.sh",
             "scripts/publish-place.sh",
             "scripts/racer-publish-state.py",
+            "src/racer/shared/RacerConfig.lua",
             "src/shared/GeneratedBuildInfo.lua",
             "src/shared/GeneratedPlaceIds.lua",
         ):
@@ -301,6 +307,23 @@ fi
             capture=True,
         )
 
+    def tag_exists(self, version: str) -> bool:
+        result = subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={self.repo}",
+                "-C",
+                str(self.repo),
+                "rev-parse",
+                "--verify",
+                f"refs/tags/racer-place-v{version}^{{commit}}",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.returncode == 0
+
 
 def require_success(result: subprocess.CompletedProcess[str], context: str) -> None:
     if result.returncode != 0:
@@ -312,6 +335,24 @@ def require_success(result: subprocess.CompletedProcess[str], context: str) -> N
 def require_failure(result: subprocess.CompletedProcess[str], context: str) -> None:
     if result.returncode == 0:
         raise RuntimeError(f"{context} unexpectedly succeeded")
+
+
+def bless_current_artifact_in_manifest(fixture: Fixture) -> None:
+    payload = fixture.load_state()
+    artifact = payload["artifact"]
+    if not isinstance(artifact, dict):
+        raise RuntimeError("test pending artifact was not an object")
+    artifact_bytes = fixture.artifact.read_bytes()
+    artifact["sha256"] = hashlib.sha256(artifact_bytes).hexdigest()
+    artifact["sizeBytes"] = len(artifact_bytes)
+    canonical = (
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        + "\n"
+    ).encode()
+    fixture.pending.write_bytes(canonical)
+    fixture.pending.chmod(0o600)
+    validation = fixture.run([str(fixture.state_helper), "validate-artifact"])
+    require_success(validation, "canonical manifest validation after artifact tamper")
 
 
 def test_success(parent: Path) -> None:
@@ -384,9 +425,62 @@ def test_build_only(parent: Path) -> None:
         raise RuntimeError("second build-only reached Rojo")
     if hashlib.sha256(fixture.artifact.read_bytes()).hexdigest() != artifact_hash:
         raise RuntimeError("second build-only overwrote the pending artifact")
+    rebuild_calls_before = line_count(fixture.rojo_log)
     require_success(fixture.finalize("700120"), "Studio finalization")
+    if line_count(fixture.rojo_log) != rebuild_calls_before + 2:
+        raise RuntimeError("valid Studio finalization did not rebuild the artifact once")
     if fixture.pending.exists():
         raise RuntimeError("Studio finalization did not clear pending state")
+
+
+def test_reproducible_artifact_integrity(parent: Path) -> None:
+    gameplay = Fixture(parent, "tampered-gameplay")
+    require_success(gameplay.build_only(), "gameplay tamper fixture build-only")
+    gameplay_text = gameplay.artifact.read_text()
+    original = 'VersionBuild = "local"'
+    if gameplay_text.count(original) != 1:
+        raise RuntimeError("gameplay tamper fixture did not contain its expected source")
+    gameplay.artifact.write_text(
+        gameplay_text.replace(original, 'VersionBuild = "tampered"', 1)
+    )
+    bless_current_artifact_in_manifest(gameplay)
+    rebuild_calls_before = line_count(gameplay.rojo_log)
+    version = "700121"
+    result = gameplay.finalize(version)
+    require_failure(result, "manifest-blessed gameplay tamper")
+    if line_count(gameplay.rojo_log) != rebuild_calls_before + 2:
+        raise RuntimeError("gameplay tamper rejection did not perform a fresh rebuild")
+    state = gameplay.load_state()
+    if state["state"] != "prepared" or state["placeVersion"] is not None:
+        raise RuntimeError("gameplay tamper was recorded before reproducibility rejection")
+    if gameplay.tag_exists(version):
+        raise RuntimeError("gameplay tamper created a publish tag")
+
+    extra = Fixture(parent, "tampered-extra-module")
+    require_success(extra.build_only(), "extra-module tamper fixture build-only")
+    extra_text = extra.artifact.read_text()
+    closing = "</roblox>\n"
+    if not extra_text.endswith(closing):
+        raise RuntimeError("extra-module tamper fixture had an unexpected XML ending")
+    injected = (
+        '<Item class="ModuleScript"><Properties>'
+        '<string name="Name">UnexpectedGameplay</string>'
+        '<ProtectedString name="Source">return true</ProtectedString>'
+        "</Properties></Item>"
+    )
+    extra.artifact.write_text(extra_text[: -len(closing)] + injected + closing)
+    bless_current_artifact_in_manifest(extra)
+    rebuild_calls_before = line_count(extra.rojo_log)
+    version = "700122"
+    result = extra.finalize(version)
+    require_failure(result, "manifest-blessed extra ModuleScript")
+    if line_count(extra.rojo_log) != rebuild_calls_before + 2:
+        raise RuntimeError("extra-module rejection did not perform a fresh rebuild")
+    state = extra.load_state()
+    if state["state"] != "prepared" or state["placeVersion"] is not None:
+        raise RuntimeError("extra ModuleScript was recorded before reproducibility rejection")
+    if extra.tag_exists(version):
+        raise RuntimeError("extra ModuleScript created a publish tag")
 
 
 def test_conflict_and_crash_resume(parent: Path) -> None:
@@ -595,6 +689,7 @@ def main() -> None:
         test_failed_request_and_retry(parent)
         test_invalid_responses(parent)
         test_build_only(parent)
+        test_reproducible_artifact_integrity(parent)
         test_conflict_and_crash_resume(parent)
         test_lookup_failure_resume(parent)
         test_mismatches_and_corruption(parent)

@@ -129,7 +129,11 @@ scripts/finalize-studio-publish.sh <verified-place-version>
 The finalizer performs no network operation, does not need an API key, and never
 moves an existing release tag. It consumes the pending record, validates the
 artifact SHA-256, size, embedded commit, timestamp, Racer place, and lobby place,
-then records the version before atomically creating its tag. It can recover an
-older pending commit after `HEAD` advances and resume a matching tag created
-before an interrupted lookup. The pending record is cleared only after the tag
-and exact PlaceVersion-to-commit lookup both succeed.
+then rebuilds that commit with the exact recorded timestamp and place ids. The
+recorded artifact must match both the fresh build's SHA-256 and its exact bytes;
+editing the rbxlx and updating the pending hash cannot bless a different build.
+Only after this reproducibility check does the finalizer record the version and
+atomically create its tag. It can recover an older pending commit after `HEAD`
+advances and resume a matching tag created before an interrupted lookup. The
+pending record is cleared only after the tag and exact PlaceVersion-to-commit
+lookup both succeed.
