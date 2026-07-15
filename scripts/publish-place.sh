@@ -1,5 +1,43 @@
 #!/usr/bin/env bash
+# Never allow an inherited `bash -x` to trace a credential expansion.
+set +x
+# Prevent `bash -a`/allexport from exporting the private shell copy below.
+set +a
 set -euo pipefail
+
+BUILD_ONLY="false"
+if [[ "$#" -eq 0 ]]; then
+  :
+elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]; then
+  BUILD_ONLY="true"
+else
+  unset ROBLOX_API_KEY RACER_PUBLISH_API_KEY
+  echo "Usage: scripts/publish-place.sh [--build-only]" >&2
+  exit 2
+fi
+
+# Keep the Open Cloud key in this shell only. Build-only must neither inspect
+# nor export it, while normal publishing validates it before any child process.
+unset RACER_PUBLISH_API_KEY
+if [[ "${BUILD_ONLY}" == "true" ]]; then
+  unset ROBLOX_API_KEY
+else
+  if [[ -z "${ROBLOX_API_KEY:-}" ]]; then
+    unset ROBLOX_API_KEY
+    echo "ROBLOX_API_KEY is required." >&2
+    exit 2
+  fi
+  RACER_PUBLISH_API_KEY="${ROBLOX_API_KEY}"
+  export -n RACER_PUBLISH_API_KEY
+  unset ROBLOX_API_KEY
+  if [[ "${RACER_PUBLISH_API_KEY}" == *$'\r'* ]] \
+    || [[ "${RACER_PUBLISH_API_KEY}" == *$'\n'* ]]; then
+    unset RACER_PUBLISH_API_KEY
+    echo "ROBLOX_API_KEY must not contain CR or LF." >&2
+    exit 2
+  fi
+  readonly RACER_PUBLISH_API_KEY
+fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -55,16 +93,6 @@ cleanup() {
   release_publish_lock
 }
 trap cleanup EXIT
-
-BUILD_ONLY="false"
-if [[ "$#" -eq 0 ]]; then
-  :
-elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]; then
-  BUILD_ONLY="true"
-else
-  echo "Usage: scripts/publish-place.sh [--build-only]" >&2
-  exit 2
-fi
 
 : "${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}"
 PLACE_ID="${ROBLOX_RACER_PLACE_ID}"
@@ -193,7 +221,6 @@ if [[ "${BUILD_ONLY}" == "true" ]]; then
   exit 0
 fi
 
-: "${ROBLOX_API_KEY:?ROBLOX_API_KEY is required}"
 : "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"
 if [[ ! "${ROBLOX_UNIVERSE_ID}" =~ ^[1-9][0-9]*$ ]]; then
   echo "ROBLOX_UNIVERSE_ID must be a positive decimal integer." >&2
@@ -220,9 +247,9 @@ if [[ "$("${STATE_HELPER}" validate-artifact)" != "${BUILD_SHA256}" ]]; then
   exit 1
 fi
 
-if ! PUBLISH_RESPONSE="$(env -u ROBLOX_API_KEY curl --fail-with-body \
+if ! PUBLISH_RESPONSE="$(env -u ROBLOX_API_KEY curl --disable --fail-with-body \
     --request POST \
-    --header @<(builtin printf 'x-api-key: %s\n' "${ROBLOX_API_KEY}") \
+    --header @<(builtin printf 'x-api-key: %s\n' "${RACER_PUBLISH_API_KEY}") \
     --header "Content-Type: application/xml" \
     --data-binary @"${PRIVATE_ARTIFACT}" \
     "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"; then

@@ -42,6 +42,13 @@ if "src/shared/GameConfig.lua" not in RACER_PROJECT.get("globIgnorePaths", []):
     fail("Racer Rojo build must exclude the ignored local src/shared/GameConfig.lua")
 
 for token in [
+    "set +x",
+    "set +a",
+    'unset RACER_PUBLISH_API_KEY',
+    'if [[ -z "${ROBLOX_API_KEY:-}" ]]; then',
+    'RACER_PUBLISH_API_KEY="${ROBLOX_API_KEY}"',
+    'export -n RACER_PUBLISH_API_KEY',
+    'echo "ROBLOX_API_KEY must not contain CR or LF."',
     '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
     'if [[ "$#" -eq 0 ]]',
     'elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]',
@@ -62,6 +69,8 @@ for token in [
     'update-ref "refs/tags/${PREFLIGHT_TAG}"',
     'create_pending_state "open-cloud"',
     '"${STATE_HELPER}" validate-artifact',
+    "curl --disable --fail-with-body",
+    "--header @<(builtin printf 'x-api-key: %s\\n' \"${RACER_PUBLISH_API_KEY}\")",
     '--data-binary @"${PRIVATE_ARTIFACT}"',
     '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
     '"${FINALIZER}" "${PLACE_VERSION}"',
@@ -69,20 +78,43 @@ for token in [
     if token not in PUBLISH_SCRIPT:
         fail(f"Racer publish contract is missing: {token}")
 
+xtrace_index = PUBLISH_SCRIPT.index("set +x")
+allexport_index = PUBLISH_SCRIPT.index("set +a")
+argument_index = PUBLISH_SCRIPT.index('BUILD_ONLY="false"')
+secret_reset_index = PUBLISH_SCRIPT.index("unset RACER_PUBLISH_API_KEY")
+credential_build_only_index = PUBLISH_SCRIPT.index(
+    'if [[ "${BUILD_ONLY}" == "true" ]]; then', secret_reset_index
+)
+build_only_secret_unset_index = PUBLISH_SCRIPT.index(
+    "unset ROBLOX_API_KEY", credential_build_only_index
+)
+missing_key_index = PUBLISH_SCRIPT.index(
+    'if [[ -z "${ROBLOX_API_KEY:-}" ]]; then', credential_build_only_index
+)
+capture_key_index = PUBLISH_SCRIPT.index(
+    'RACER_PUBLISH_API_KEY="${ROBLOX_API_KEY}"', missing_key_index
+)
+private_key_index = PUBLISH_SCRIPT.index(
+    "export -n RACER_PUBLISH_API_KEY", capture_key_index
+)
+captured_key_unset_index = PUBLISH_SCRIPT.index(
+    "unset ROBLOX_API_KEY", private_key_index
+)
+crlf_check_index = PUBLISH_SCRIPT.index(
+    '"${RACER_PUBLISH_API_KEY}" == *$\'\\r\'*', capture_key_index
+)
+script_dir_index = PUBLISH_SCRIPT.index('SCRIPT_DIR="$(cd --')
 snapshot_build_index = PUBLISH_SCRIPT.index('"${BUILD_HELPER}" \\')
 pending_guard_index = PUBLISH_SCRIPT.index('"${STATE_HELPER}" assert-absent')
 install_index = PUBLISH_SCRIPT.index("atomic_install_artifact", snapshot_build_index)
 build_only_index = PUBLISH_SCRIPT.index(
-    'if [[ "${BUILD_ONLY}" == "true" ]]; then'
+    'if [[ "${BUILD_ONLY}" == "true" ]]; then', install_index
 )
 build_only_exit_index = PUBLISH_SCRIPT.index("exit 0", build_only_index)
-api_key_index = PUBLISH_SCRIPT.index(
-    ': "${ROBLOX_API_KEY:?ROBLOX_API_KEY is required}"'
-)
 universe_index = PUBLISH_SCRIPT.index(
     ': "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"'
 )
-curl_index = PUBLISH_SCRIPT.index("curl --fail-with-body")
+curl_index = PUBLISH_SCRIPT.index("curl --disable --fail-with-body")
 studio_pending_index = PUBLISH_SCRIPT.index('create_pending_state "studio"')
 cloud_pending_index = PUBLISH_SCRIPT.index('create_pending_state "open-cloud"')
 manifest_recheck_index = PUBLISH_SCRIPT.index(
@@ -99,13 +131,24 @@ network_recheck_index = PUBLISH_SCRIPT.index(
     "require_release_state", preflight_delete_index
 )
 if not (
-    pending_guard_index
+    xtrace_index
+    < allexport_index
+    < argument_index
+    < secret_reset_index
+    < credential_build_only_index
+    < build_only_secret_unset_index
+    < missing_key_index
+    < capture_key_index
+    < private_key_index
+    < captured_key_unset_index
+    < crlf_check_index
+    < script_dir_index
+    < pending_guard_index
     < snapshot_build_index
     < install_index
     < build_only_index
     < studio_pending_index
     < build_only_exit_index
-    < api_key_index
     < universe_index
     < preflight_delete_index
     < network_recheck_index
@@ -116,9 +159,18 @@ if not (
     < finalizer_index
 ):
     fail(
-        "snapshot build must install before build-only exits, while network publishing "
-        "must recheck release state after tag preflight and before curl"
+        "credentials must be isolated before child processes, snapshot build must install "
+        "before build-only exits, and network publishing must recheck release state "
+        "before curl"
     )
+
+publish_statements = [
+    line.strip()
+    for line in PUBLISH_SCRIPT.splitlines()
+    if line.strip() and not line.lstrip().startswith("#")
+]
+if publish_statements[:3] != ["set +x", "set +a", "set -euo pipefail"]:
+    fail("Racer publish must disable inherited xtrace/allexport before any other statement")
 
 if PUBLISH_SCRIPT.count("require_release_state") < 3:
     fail("Racer publish must verify the captured release before install and network use")
