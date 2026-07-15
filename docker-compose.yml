@@ -1,5 +1,6 @@
 services:
   roblox:
+    platform: linux/amd64
     build: .
     working_dir: /workspace
     volumes:

@@ -9,10 +9,13 @@ RUN curl -fsSL https://github.com/LPGhatguy/aftman/releases/download/v0.3.0/aftm
     && chmod +x /usr/local/bin/aftman \
     && rm /tmp/aftman.zip
 
+COPY --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/racer-docker-entrypoint
+
 RUN useradd -m -s /bin/bash codex
 USER codex
 WORKDIR /workspace
 
 ENV PATH="/home/codex/.aftman/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+ENTRYPOINT ["/usr/local/bin/racer-docker-entrypoint"]
 CMD ["bash"]

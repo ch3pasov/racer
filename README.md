@@ -21,6 +21,9 @@ repositories.
   identity across uncertain publish outcomes.
 - `scripts/test-release-snapshot-build.sh` verifies release-build determinism,
   worktree isolation, dirty-tree refusal, and the Rojo version pin.
+- `scripts/test-docker-bootstrap.py` verifies that every container command first
+  installs the pinned Aftman tools and that Compose uses the supported CPU
+  architecture.
 - `scripts/finalize-studio-publish.sh` safely records the immutable git mapping
   after a manually verified Roblox Studio publish.
 - `scripts/lookup-place-version.sh` maps a Roblox place version back to the git
@@ -74,12 +77,19 @@ Studio.
 
 ```sh
 docker compose run --rm roblox bash
+python3 scripts/test-docker-bootstrap.py
 python3 scripts/check-racer-parity.py
 scripts/test-release-snapshot-build.sh
 python3 scripts/test-publish-recovery.py
 scripts/publish-place.sh --build-only
 scripts/publish-place.sh
 ```
+
+Compose runs this service as `linux/amd64`, including on Apple Silicon, because
+the pinned Aftman 0.3.0 binary is x86_64-only. The image entrypoint runs
+`aftman install --no-trust-check` before every requested container command, so
+even a fresh `docker compose run --rm roblox bash` has the repository-pinned
+tools available.
 
 Publishing refuses to run from a dirty git tree. The published place includes
 the source commit in `ReplicatedStorage.Shared.GeneratedBuildInfo`, and the
