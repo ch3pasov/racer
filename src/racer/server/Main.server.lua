@@ -820,8 +820,8 @@ local function enterScreen(player: Player, screenId: string)
 		return
 	end
 
-	session.activePlayer = player
 	hydrateSessionPlayerState(session, player)
+	session.activePlayer = player
 	resetRun(session)
 	setCharacterLocked(player, true)
 	player:SetAttribute("Activity", "RacerScreen")

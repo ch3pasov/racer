@@ -213,6 +213,7 @@ end
 
 local predictedState = nil
 local predictedSourceId = nil
+local predictedSourceUserId = nil
 
 local function replicatedTrafficOffsets(state)
 	if state.trafficOffsetsBlob == nil or state.trafficOffsetsBlob.Value == "" then
@@ -282,9 +283,14 @@ local function copyPredictedState(source)
 end
 
 local function ensurePredictedState(source)
-	if not predictedState or predictedSourceId ~= source.id then
+	if
+		not predictedState
+		or predictedSourceId ~= source.id
+		or predictedSourceUserId ~= source.activeUserId.Value
+	then
 		predictedState = copyPredictedState(source)
 		predictedSourceId = source.id
+		predictedSourceUserId = source.activeUserId.Value
 		return predictedState
 	end
 
@@ -3497,6 +3503,7 @@ RunService.RenderStepped:Connect(function(deltaTime)
 		updateActiveStatus(nil)
 		predictedState = nil
 		predictedSourceId = nil
+		predictedSourceUserId = nil
 		perfStats.lastFullObjects = 0
 		perfStats.lastFullRows = 0
 		settingsLabelAccumulator = SETTINGS_LABEL_INTERVAL

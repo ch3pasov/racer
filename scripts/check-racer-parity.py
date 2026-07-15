@@ -1448,7 +1448,7 @@ if SERVER.count("clearSessionPlayerState(session)") != 3:
 
 require(
     r"local function enterScreen\(player: Player, screenId: string\).*?"
-    r"session\.activePlayer = player\s*hydrateSessionPlayerState\(session, player\)\s*"
+    r"hydrateSessionPlayerState\(session, player\)\s*session\.activePlayer = player\s*"
     r"resetRun\(session\)",
     SERVER,
     "Racer entry must hydrate the new player's screen state before resetting the run",
@@ -1496,6 +1496,28 @@ require(
     r"valueObject\.Value = setting\.default",
     SERVER,
     "idle Racer cabinets must not retain the prior player's renderer settings",
+)
+
+for token in [
+    "local predictedSourceUserId = nil",
+    "or predictedSourceUserId ~= source.activeUserId.Value",
+    "predictedSourceUserId = source.activeUserId.Value",
+]:
+    if token not in CLIENT:
+        fail(f"client prediction must be isolated across Racer driver handoffs: {token}")
+
+if CLIENT.count("predictedSourceUserId = nil") != 2:
+    fail("client prediction must forget its driver identity whenever the active screen is released")
+
+require(
+    r"local function ensurePredictedState\(source\)\s*if\s*not predictedState\s*"
+    r"or predictedSourceId ~= source\.id\s*"
+    r"or predictedSourceUserId ~= source\.activeUserId\.Value\s*then\s*"
+    r"predictedState = copyPredictedState\(source\)\s*"
+    r"predictedSourceId = source\.id\s*"
+    r"predictedSourceUserId = source\.activeUserId\.Value",
+    CLIENT,
+    "a Racer screen's predicted state must be rebuilt whenever its active driver changes",
 )
 
 require(
