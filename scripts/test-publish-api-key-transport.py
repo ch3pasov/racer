@@ -13,55 +13,12 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 TEST_VERSION = "424242"
 STUDIO_TEST_VERSION = "424243"
-
-FAKE_ROJO = r'''#!/usr/bin/env python3
-import hashlib
-import os
-from pathlib import Path
-import sys
-from xml.sax.saxutils import escape
-
-
-expected = "sentinel-" + hashlib.sha256(
-    b"racer-publish-api-key-transport-test"
-).hexdigest()
-if "ROBLOX_API_KEY" in os.environ or "RACER_PUBLISH_API_KEY" in os.environ:
-    print("fake rojo received a credential variable", file=sys.stderr)
-    raise SystemExit(89)
-if any(expected in value for value in os.environ.values()):
-    print("fake rojo received the credential value", file=sys.stderr)
-    raise SystemExit(89)
-
-if sys.argv[1:] == ["--version"]:
-    print("Rojo 7.5.1")
-    raise SystemExit(0)
-
-if len(sys.argv) < 4 or sys.argv[1] != "build" or "--output" not in sys.argv:
-    print("fake rojo received an unexpected command", file=sys.stderr)
-    raise SystemExit(90)
-
-output_index = sys.argv.index("--output") + 1
-if output_index >= len(sys.argv):
-    print("fake rojo did not receive an output path", file=sys.stderr)
-    raise SystemExit(90)
-
-output = Path(sys.argv[output_index])
-output.parent.mkdir(parents=True, exist_ok=True)
-build_info = Path("src/shared/GeneratedBuildInfo.lua").read_text()
-place_ids = Path("src/shared/GeneratedPlaceIds.lua").read_text()
-output.write_text(
-    '<roblox version="4">'
-    '<Item class="ModuleScript"><Properties>'
-    '<string name="Name">GeneratedBuildInfo</string>'
-    f'<ProtectedString name="Source">{escape(build_info)}</ProtectedString>'
-    '</Properties></Item>'
-    '<Item class="ModuleScript"><Properties>'
-    '<string name="Name">GeneratedPlaceIds</string>'
-    f'<ProtectedString name="Source">{escape(place_ids)}</ProtectedString>'
-    '</Properties></Item>'
-    '</roblox>\n'
+TOOLCHAIN_FIXTURE = ROOT / "scripts/test-fixtures/release-toolchain"
+FIXTURE_MANIFEST = TOOLCHAIN_FIXTURE / "manifest.tsv"
+FIXTURE_ROJO = TOOLCHAIN_FIXTURE / "fake-rojo"
+ROJO_STORAGE_RELATIVE = Path(
+    ".aftman/tool-storage/rojo-rbx/rojo/7.5.1/rojo"
 )
-'''
 
 FAKE_CURL = r'''#!/usr/bin/env python3
 import hashlib
@@ -247,6 +204,7 @@ def main() -> None:
         repo = temp_root / "repo"
         fake_bin = temp_root / "fake-bin"
         curl_home = temp_root / "curl-home"
+        fixture_home = temp_root / "home"
         repo.mkdir()
         fake_bin.mkdir()
         curl_home.mkdir()
@@ -265,6 +223,7 @@ def main() -> None:
             "scripts/lookup-place-version.sh",
             "scripts/publish-place.sh",
             "scripts/racer-publish-state.py",
+            "src/racer/shared/RacerConfig.lua",
             "src/shared/GeneratedBuildInfo.lua",
             "src/shared/GeneratedPlaceIds.lua",
         ):
@@ -273,12 +232,18 @@ def main() -> None:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
 
+        shutil.copy2(
+            FIXTURE_MANIFEST, repo / "scripts/racer-release-toolchain.tsv"
+        )
+        fixture_rojo = fixture_home / ROJO_STORAGE_RELATIVE
+        fixture_rojo.parent.mkdir(parents=True)
+        shutil.copy2(FIXTURE_ROJO, fixture_rojo)
+
         state_helper = repo / "scripts/racer-publish-state.py"
         shutil.copy2(
             state_helper, repo / "scripts/racer-publish-state-real.py"
         )
         write_executable(state_helper, FAKE_STATE_HELPER)
-        write_executable(fake_bin / "rojo", FAKE_ROJO)
         write_executable(fake_bin / "curl", FAKE_CURL)
         real_git = shutil.which("git")
         if real_git is None:
@@ -304,6 +269,7 @@ def main() -> None:
         environment.update(
             {
                 "CURL_HOME": str(curl_home),
+                "HOME": str(fixture_home),
                 "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
                 "RACER_PUBLISH_API_KEY": sentinel,
                 "ROBLOX_API_KEY": sentinel,

@@ -20,6 +20,9 @@ TEXTURES = (ROOT / "src/racer/shared/RacerTextures.lua").read_text()
 PUBLISH_SCRIPT = (ROOT / "scripts/publish-place.sh").read_text()
 RELEASE_BUILD_SCRIPT_PATH = ROOT / "scripts/build-racer-release.sh"
 RELEASE_BUILD_SCRIPT = RELEASE_BUILD_SCRIPT_PATH.read_text()
+TOOLCHAIN_MANIFEST_PATH = ROOT / "scripts/racer-release-toolchain.tsv"
+TOOLCHAIN_MANIFEST = TOOLCHAIN_MANIFEST_PATH.read_text()
+TOOLCHAIN_FIXTURE_DIR = ROOT / "scripts/test-fixtures/release-toolchain"
 RELEASE_BUILD_TEST_PATH = ROOT / "scripts/test-release-snapshot-build.sh"
 RELEASE_BUILD_TEST = RELEASE_BUILD_TEST_PATH.read_text()
 PUBLISH_STATE_SCRIPT_PATH = ROOT / "scripts/racer-publish-state.py"
@@ -199,40 +202,130 @@ for forbidden in [
     if forbidden in PUBLISH_SCRIPT:
         fail(f"Racer publish contract must not contain: {forbidden}")
 
+expected_toolchain_manifest = (
+    "schema\tracer-release-toolchain-v1\n"
+    "tool\trojo-rbx/rojo\t7.5.1\n"
+    "platform\tlinux-x86_64\t"
+    "0d600df6c4c48a9d09c701d0c2a109c55c2db833cd9766fd7d1e6e2684843d53\t"
+    "72664b9106121eea5f3fefade7d44e70ea01100ed432878af331efd22e31c0ca\n"
+    "platform\tdarwin-arm64\t"
+    "8a896e097405a084f5aa8fcac6f942a2d2c934601b48b817ffe25d2b42128965\t"
+    "586f7877041ad21538c99b1693183def87b69ddbdad61341f937c28948ae98bc\n"
+    "platform\tdarwin-x86_64\t"
+    "29e87f9c2ef3747143d529aa422b138acc9ca4e6a84038538e8789ae2355f589\t"
+    "5336b6986f8ad8be4f6c57da70b03f132d187580ee5ee1d75bd7af0d41b7d0a1\n"
+)
+if TOOLCHAIN_MANIFEST_PATH.is_symlink() or not TOOLCHAIN_MANIFEST_PATH.is_file():
+    fail("Release toolchain manifest must be a tracked regular file")
+if TOOLCHAIN_MANIFEST != expected_toolchain_manifest:
+    fail("Release toolchain manifest must contain the exact official Rojo 7.5.1 hashes")
+
+
+def require_toolchain_fixture(
+    executable_name: str, manifest_name: str, expected_sha256: str
+):
+    executable = TOOLCHAIN_FIXTURE_DIR / executable_name
+    manifest = TOOLCHAIN_FIXTURE_DIR / manifest_name
+    if executable.is_symlink() or not executable.is_file():
+        fail(f"Toolchain fixture {executable_name} must be a regular file")
+    if executable.stat().st_mode & 0o111 == 0:
+        fail(f"Toolchain fixture {executable_name} must be executable")
+    actual_sha256 = hashlib.sha256(executable.read_bytes()).hexdigest()
+    if actual_sha256 != expected_sha256:
+        fail(f"Toolchain fixture {executable_name} changed without a manifest update")
+    expected_manifest = (
+        "schema\tracer-release-toolchain-v1\n"
+        "tool\trojo-rbx/rojo\t7.5.1\n"
+        f"platform\tlinux-x86_64\t{expected_sha256}\t{expected_sha256}\n"
+        f"platform\tdarwin-arm64\t{expected_sha256}\t{expected_sha256}\n"
+        f"platform\tdarwin-x86_64\t{expected_sha256}\t{expected_sha256}\n"
+    )
+    if manifest.is_symlink() or not manifest.is_file():
+        fail(f"Toolchain fixture manifest {manifest_name} must be a regular file")
+    if manifest.read_text() != expected_manifest:
+        fail(f"Toolchain fixture manifest {manifest_name} has a stale exact hash")
+
+
+require_toolchain_fixture(
+    "fake-rojo",
+    "manifest.tsv",
+    "dd5d3bb68570d69107410b1f5864755bd5b281e6ea46810cf71e1ffef89ae2e0",
+)
+require_toolchain_fixture(
+    "fake-rojo-self-mutating",
+    "self-mutating-manifest.tsv",
+    "e07cafc6f578bf3bf7edefdd8c5660f8ecc9b30d1e0c3ab662340645f5278d9c",
+)
+require_toolchain_fixture(
+    "fake-rojo-wrong-version",
+    "wrong-version-manifest.tsv",
+    "2f42f5d4dc718cef0c7ba1958f102682cb7bea614a64cf4d96798c7adce2661b",
+)
+
 if RELEASE_BUILD_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
     fail("Release snapshot builder must be executable")
+if not RELEASE_BUILD_SCRIPT.startswith(
+    "#!/bin/bash -p\nset +x\nset +a\nset -euo pipefail\n"
+):
+    fail("Release snapshot builder must enter through privileged absolute Bash")
 
 for token in [
     'EXPECTED_ROJO_VERSION="Rojo 7.5.1"',
-    'ACTUAL_ROJO_VERSION="$(LC_ALL=C rojo --version)"',
+    'TOOLCHAIN_MANIFEST_RELATIVE="scripts/racer-release-toolchain.tsv"',
+    'RELEASE_PLATFORM="$(detect_release_platform)"',
+    '/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C',
+    'GIT_CONFIG_NOSYSTEM=1',
+    'GIT_CONFIG_GLOBAL=/dev/null',
+    '/usr/bin/git -c safe.directory="${ROOT_DIR}"',
     'git_repo archive --format=tar --output="${ARCHIVE_FILE}" "${GIT_COMMIT}"',
-    'tar -xf "${ARCHIVE_FILE}" -C "${SNAPSHOT_DIR}"',
+    '/usr/bin/tar -xf "${ARCHIVE_FILE}" -C "${SNAPSHOT_DIR}"',
+    'load_toolchain_manifest "${TOOLCHAIN_MANIFEST}"',
+    'ROJO_SOURCE="${HOME}/.aftman/tool-storage/rojo-rbx/rojo/${ROJO_STORAGE_VERSION}/rojo"',
+    'Release Rojo must be a regular non-symlink file in canonical Aftman storage.',
+    'Release Rojo SHA-256 does not match the authenticated platform manifest.',
+    '/bin/cp "${ROJO_SOURCE}" "${PRIVATE_ROJO}"',
+    '/bin/cat > "${PLACE_IDS_FILE}" <<EOF',
+    '/bin/cat > "${BUILD_INFO_FILE}" <<EOF',
+    'require_private_rojo_hash "after its version check"',
     'BUILD_INFO_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedBuildInfo.lua"',
     'PLACE_IDS_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedPlaceIds.lua"',
     'cd "${SNAPSHOT_DIR}"',
-    'LC_ALL=C rojo build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"',
+    '"${PRIVATE_ROJO}" --version',
+    '"${PRIVATE_ROJO}" build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"',
     'mv -f "${OUTPUT_TEMP}" "${OUTPUT_FILE}"',
 ]:
     if token not in RELEASE_BUILD_SCRIPT:
         fail(f"Release snapshot builder contract is missing: {token}")
 
-version_check_index = RELEASE_BUILD_SCRIPT.index(
-    'if [[ "${ACTUAL_ROJO_VERSION}" != "${EXPECTED_ROJO_VERSION}" ]]'
-)
 archive_index = RELEASE_BUILD_SCRIPT.index("git_repo archive")
 extract_index = RELEASE_BUILD_SCRIPT.index(
     'tar -xf "${ARCHIVE_FILE}" -C "${SNAPSHOT_DIR}"'
+)
+manifest_index = RELEASE_BUILD_SCRIPT.index(
+    'load_toolchain_manifest "${TOOLCHAIN_MANIFEST}"'
+)
+canonical_rojo_index = RELEASE_BUILD_SCRIPT.index(
+    'ROJO_SOURCE="${HOME}/.aftman/tool-storage/rojo-rbx/rojo/${ROJO_STORAGE_VERSION}/rojo"'
+)
+private_copy_index = RELEASE_BUILD_SCRIPT.index(
+    '/bin/cp "${ROJO_SOURCE}" "${PRIVATE_ROJO}"'
 )
 metadata_index = RELEASE_BUILD_SCRIPT.index(
     'BUILD_INFO_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedBuildInfo.lua"'
 )
 snapshot_cwd_index = RELEASE_BUILD_SCRIPT.index('cd "${SNAPSHOT_DIR}"')
+version_check_index = RELEASE_BUILD_SCRIPT.index(
+    'if [[ "${ACTUAL_ROJO_VERSION}" != "${EXPECTED_ROJO_VERSION}" ]]'
+)
 rojo_build_index = RELEASE_BUILD_SCRIPT.index(
-    'LC_ALL=C rojo build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"'
+    '"${PRIVATE_ROJO}" build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"'
 )
 if not (
     archive_index
     < extract_index
+    < manifest_index
+    < canonical_rojo_index
+    < private_copy_index
     < metadata_index
     < snapshot_cwd_index
     < version_check_index
@@ -246,6 +339,18 @@ if not (
 for forbidden in [
     '"${ROOT_DIR}/src/shared/GeneratedBuildInfo.lua"',
     '"${ROOT_DIR}/src/shared/GeneratedPlaceIds.lua"',
+    "RACER_ROJO_PATH",
+    "SKIP_ROJO_SHA",
+    "rojo --version",
+    'LC_ALL=C rojo build',
+    "#!/usr/bin/env bash",
+    '\n  git -c safe.directory="${ROOT_DIR}"',
+    '\ntar -xf "${ARCHIVE_FILE}"',
+    '\ncat > "${PLACE_IDS_FILE}"',
+    '\ncat > "${BUILD_INFO_FILE}"',
+    "ReleasePlatform =",
+    "RojoBinarySha256 =",
+    "ToolchainPlatform =",
 ]:
     if forbidden in RELEASE_BUILD_SCRIPT:
         fail(f"Release snapshot builder must not write a live generated module: {forbidden}")
@@ -261,8 +366,22 @@ for token in [
     "Uncommitted integration-test mutation",
     'cmp -s "${FIRST_BUILD}" "${DIRTY_BUILD}"',
     '"${PUBLISHER}" --build-only',
-    'echo "Rojo 0.0.0"',
-    "Release helper accepted an unpinned Rojo version.",
+    "Release helper executed a PATH Rojo impostor.",
+    "Release helper executed a PATH Bash impostor.",
+    "Release helper executed a PATH cat impostor.",
+    "Release helper executed a PATH Git impostor.",
+    "Release helper executed a PATH tar impostor.",
+    "Release helper evaluated inherited BASH_ENV before authentication.",
+    'TAR_OPTIONS="--racer-toolchain-poison"',
+    "Release helper did not reject a wrong canonical Rojo SHA-256.",
+    "Release helper did not reject a canonical Rojo symlink.",
+    "Release helper did not reject a nonregular canonical Rojo path.",
+    "Release helper did not detect a self-mutating private Rojo copy.",
+    "Release helper did not reject an authenticated Rojo with the wrong version.",
+    "Release helper did not reject extra toolchain manifest fields.",
+    "Release helper did not reject a snapshot toolchain manifest symlink.",
+    'PERL5OPT="-MRacerToolchainPoisonMustNotLoad"',
+    'scripts/test-fixtures/release-toolchain',
 ]:
     if token not in RELEASE_BUILD_TEST:
         fail(f"Release snapshot integration coverage is missing: {token}")
@@ -442,6 +561,20 @@ if 'git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}"' not in LOOKUP_SCRIPT:
 
 if "python3" not in DOCKERFILE:
     fail("The release image must install Python for publish and verification scripts")
+for token in [
+    "ARG TARGETARCH\n",
+    'test "${TARGETARCH}" = "amd64"',
+    'test "$(/usr/bin/dpkg --print-architecture)" = "amd64"',
+    "194fe81e24ae7cc1f3141fd1d42db6cb60f03d42735d12ae865fe2db11ea6f0e",
+    "3b13b10838fb7f7aafae16a9a01085439c75619bb9b78a1b5b787eab81ddf6e4",
+    "/usr/bin/curl --disable --fail --silent --show-error --location",
+    '/usr/bin/sha256sum --check --strict -',
+    '/usr/bin/install -m 0755 "${extracted_path}" /usr/local/bin/aftman',
+]:
+    if token not in DOCKERFILE:
+        fail(f"Docker Aftman authentication contract is missing: {token}")
+if "ARG TARGETARCH=" in DOCKERFILE or "ARG AFTMAN_" in DOCKERFILE:
+    fail("Docker must not default its architecture or expose overridable Aftman hashes")
 
 if "ROBLOX_API_KEY" in DOCKER_COMPOSE:
     fail("Compose must not inject the Roblox API key into ordinary commands")

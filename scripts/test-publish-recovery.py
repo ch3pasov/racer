@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import stat
 import subprocess
 import tempfile
@@ -21,49 +22,12 @@ PENDING_REF = "refs/racer-publish/pending"
 API_SENTINEL = "pending-state-secret-" + hashlib.sha256(
     b"racer-pending-publish-recovery"
 ).hexdigest()
-
-
-FAKE_ROJO = r'''#!/usr/bin/env python3
-import os
-from pathlib import Path
-import sys
-from xml.sax.saxutils import escape
-
-
-log = Path(os.environ["FAKE_ROJO_LOG"])
-with log.open("a") as stream:
-    stream.write("call\n")
-
-if sys.argv[1:] == ["--version"]:
-    print("Rojo 7.5.1")
-    raise SystemExit(0)
-
-if len(sys.argv) < 4 or sys.argv[1] != "build" or "--output" not in sys.argv:
-    print("fake rojo received an unexpected command", file=sys.stderr)
-    raise SystemExit(90)
-
-output = Path(sys.argv[sys.argv.index("--output") + 1])
-output.parent.mkdir(parents=True, exist_ok=True)
-build_info = Path("src/shared/GeneratedBuildInfo.lua").read_text()
-place_ids = Path("src/shared/GeneratedPlaceIds.lua").read_text()
-gameplay = Path("src/racer/shared/RacerConfig.lua").read_text()
-output.write_text(
-    '<roblox version="4">'
-    '<Item class="ModuleScript"><Properties>'
-    '<string name="Name">GeneratedBuildInfo</string>'
-    f'<ProtectedString name="Source">{escape(build_info)}</ProtectedString>'
-    '</Properties></Item>'
-    '<Item class="ModuleScript"><Properties>'
-    '<string name="Name">GeneratedPlaceIds</string>'
-    f'<ProtectedString name="Source">{escape(place_ids)}</ProtectedString>'
-    '</Properties></Item>'
-    '<Item class="ModuleScript"><Properties>'
-    '<string name="Name">RacerConfig</string>'
-    f'<ProtectedString name="Source">{escape(gameplay)}</ProtectedString>'
-    '</Properties></Item>'
-    '</roblox>\n'
+TOOLCHAIN_FIXTURE = ROOT / "scripts/test-fixtures/release-toolchain"
+FIXTURE_MANIFEST = TOOLCHAIN_FIXTURE / "manifest.tsv"
+FIXTURE_ROJO = TOOLCHAIN_FIXTURE / "fake-rojo"
+ROJO_STORAGE_RELATIVE = Path(
+    ".aftman/tool-storage/rojo-rbx/rojo/7.5.1/rojo"
 )
-'''
 
 
 FAKE_CURL = r'''#!/usr/bin/env python3
@@ -178,8 +142,9 @@ class Fixture:
         self.root = parent / name
         self.repo = self.root / "repo"
         self.fake_bin = self.root / "fake-bin"
-        self.rojo_log = self.root / "rojo.log"
+        self.build_log = self.root / "build.log"
         self.curl_log = self.root / "curl.log"
+        self.fixture_home = self.root / "home"
         self.repo.mkdir(parents=True)
         self.fake_bin.mkdir()
 
@@ -199,6 +164,26 @@ class Fixture:
             destination = self.repo / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+
+        shutil.copy2(
+            FIXTURE_MANIFEST, self.repo / "scripts/racer-release-toolchain.tsv"
+        )
+        fixture_rojo = self.fixture_home / ROJO_STORAGE_RELATIVE
+        fixture_rojo.parent.mkdir(parents=True)
+        shutil.copy2(FIXTURE_ROJO, fixture_rojo)
+
+        build_helper = self.repo / "scripts/build-racer-release.sh"
+        real_build_helper = self.repo / "scripts/build-racer-release-real.sh"
+        shutil.copy2(build_helper, real_build_helper)
+        write_executable(
+            build_helper,
+            f'''#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${{BASH_SOURCE[0]}}")" && pwd)"
+/usr/bin/printf 'call\\n' >> {shlex.quote(str(self.build_log))}
+exec "${{SCRIPT_DIR}}/build-racer-release-real.sh" "$@"
+''',
+        )
         if broken_lookup:
             write_executable(
                 self.repo / "scripts/lookup-place-version.sh",
@@ -222,7 +207,6 @@ fi
 ''',
             )
 
-        write_executable(self.fake_bin / "rojo", FAKE_ROJO)
         write_executable(self.fake_bin / "curl", FAKE_CURL)
 
         git(self.repo, "init", "--quiet")
@@ -257,7 +241,7 @@ fi
                 "FAKE_CURL_LOG": str(self.curl_log),
                 "FAKE_CURL_MODE": mode,
                 "FAKE_CURL_VERSION": version,
-                "FAKE_ROJO_LOG": str(self.rojo_log),
+                "HOME": str(self.fixture_home),
                 "PATH": f"{self.fake_bin}{os.pathsep}{environment['PATH']}",
                 "ROBLOX_API_KEY": API_SENTINEL,
                 "ROBLOX_LOBBY_PLACE_ID": LOBBY_PLACE_ID,
@@ -423,12 +407,12 @@ def test_failed_request_and_retry(parent: Path) -> None:
         raise RuntimeError("failed publish did not retain its recovery ref")
     artifact_hash = hashlib.sha256(fixture.artifact.read_bytes()).hexdigest()
     curl_calls = line_count(fixture.curl_log)
-    rojo_calls = line_count(fixture.rojo_log)
+    build_calls = line_count(fixture.build_log)
 
     retry = fixture.publish("success", "700102")
     require_failure(retry, "unsafe retry while pending")
-    if line_count(fixture.curl_log) != curl_calls or line_count(fixture.rojo_log) != rojo_calls:
-        raise RuntimeError("pending retry reached Rojo or curl")
+    if line_count(fixture.curl_log) != curl_calls or line_count(fixture.build_log) != build_calls:
+        raise RuntimeError("pending retry reached the release builder or curl")
     if hashlib.sha256(fixture.artifact.read_bytes()).hexdigest() != artifact_hash:
         raise RuntimeError("pending retry overwrote the release artifact")
 
@@ -468,16 +452,16 @@ def test_build_only(parent: Path) -> None:
     if line_count(fixture.curl_log) != 0:
         raise RuntimeError("build-only called curl")
     artifact_hash = hashlib.sha256(fixture.artifact.read_bytes()).hexdigest()
-    rojo_calls = line_count(fixture.rojo_log)
+    build_calls = line_count(fixture.build_log)
     retry = fixture.build_only()
     require_failure(retry, "second build-only while pending")
-    if line_count(fixture.rojo_log) != rojo_calls:
-        raise RuntimeError("second build-only reached Rojo")
+    if line_count(fixture.build_log) != build_calls:
+        raise RuntimeError("second build-only reached the release builder")
     if hashlib.sha256(fixture.artifact.read_bytes()).hexdigest() != artifact_hash:
         raise RuntimeError("second build-only overwrote the pending artifact")
-    rebuild_calls_before = line_count(fixture.rojo_log)
+    rebuild_calls_before = line_count(fixture.build_log)
     require_success(fixture.finalize("700120"), "Studio finalization")
-    if line_count(fixture.rojo_log) != rebuild_calls_before + 2:
+    if line_count(fixture.build_log) != rebuild_calls_before + 1:
         raise RuntimeError("valid Studio finalization did not rebuild the artifact once")
     if fixture.pending.exists():
         raise RuntimeError("Studio finalization did not clear pending state")
@@ -496,11 +480,11 @@ def test_reproducible_artifact_integrity(parent: Path) -> None:
         gameplay_text.replace(original, 'VersionBuild = "tampered"', 1)
     )
     bless_current_artifact_in_manifest(gameplay)
-    rebuild_calls_before = line_count(gameplay.rojo_log)
+    rebuild_calls_before = line_count(gameplay.build_log)
     version = "700121"
     result = gameplay.finalize(version)
     require_failure(result, "manifest-blessed gameplay tamper")
-    if line_count(gameplay.rojo_log) != rebuild_calls_before + 2:
+    if line_count(gameplay.build_log) != rebuild_calls_before + 1:
         raise RuntimeError("gameplay tamper rejection did not perform a fresh rebuild")
     state = gameplay.load_state()
     if state["state"] != "prepared" or state["placeVersion"] is not None:
@@ -522,11 +506,11 @@ def test_reproducible_artifact_integrity(parent: Path) -> None:
     )
     extra.artifact.write_text(extra_text[: -len(closing)] + injected + closing)
     bless_current_artifact_in_manifest(extra)
-    rebuild_calls_before = line_count(extra.rojo_log)
+    rebuild_calls_before = line_count(extra.build_log)
     version = "700122"
     result = extra.finalize(version)
     require_failure(result, "manifest-blessed extra ModuleScript")
-    if line_count(extra.rojo_log) != rebuild_calls_before + 2:
+    if line_count(extra.build_log) != rebuild_calls_before + 1:
         raise RuntimeError("extra-module rejection did not perform a fresh rebuild")
     state = extra.load_state()
     if state["state"] != "prepared" or state["placeVersion"] is not None:
@@ -708,8 +692,8 @@ def test_recovery_ref_guards(parent: Path) -> None:
     )
     result = orphan.publish("success", "700143")
     require_failure(result, "publisher with orphan recovery ref")
-    if line_count(orphan.rojo_log) or line_count(orphan.curl_log):
-        raise RuntimeError("orphan recovery ref refusal reached Rojo or curl")
+    if line_count(orphan.build_log) or line_count(orphan.curl_log):
+        raise RuntimeError("orphan recovery ref refusal reached the release builder or curl")
     if orphan.pending.exists() or orphan.pending_ref_commit() != orphan.release_commit:
         raise RuntimeError("orphan recovery ref refusal changed recovery state")
 
@@ -780,8 +764,8 @@ def test_mismatches_and_corruption(parent: Path) -> None:
     lock_path.mkdir(parents=True)
     publish = locked.publish("success", "700149")
     require_failure(publish, "single-writer release lock")
-    if line_count(locked.rojo_log) or line_count(locked.curl_log):
-        raise RuntimeError("release-lock refusal reached Rojo or curl")
+    if line_count(locked.build_log) or line_count(locked.curl_log):
+        raise RuntimeError("release-lock refusal reached the release builder or curl")
 
     boundary = Fixture(
         parent, "post-manifest-mutation", mutate_after_state_create=True
@@ -815,8 +799,8 @@ def test_mismatches_and_corruption(parent: Path) -> None:
     corrupt.pending.chmod(0o600)
     publish = corrupt.publish("success", "700152")
     require_failure(publish, "corrupt pending publisher refusal")
-    if line_count(corrupt.rojo_log) or line_count(corrupt.curl_log):
-        raise RuntimeError("corrupt pending state reached Rojo or curl")
+    if line_count(corrupt.build_log) or line_count(corrupt.curl_log):
+        raise RuntimeError("corrupt pending state reached the release builder or curl")
     require_failure(corrupt.finalize("700152"), "corrupt pending finalizer refusal")
 
     symlink = Fixture(parent, "symlink-state")
@@ -826,8 +810,8 @@ def test_mismatches_and_corruption(parent: Path) -> None:
     symlink.pending.symlink_to(target.name)
     publish = symlink.publish("success", "700153")
     require_failure(publish, "symlink pending publisher refusal")
-    if line_count(symlink.rojo_log) or line_count(symlink.curl_log):
-        raise RuntimeError("symlink pending state reached Rojo or curl")
+    if line_count(symlink.build_log) or line_count(symlink.curl_log):
+        raise RuntimeError("symlink pending state reached the release builder or curl")
 
 
 def test_atomic_state_operations(parent: Path) -> None:

@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+import sys
+
+
+if sys.argv[1:] == ["--version"]:
+    print("Rojo 7.5.0")
+    raise SystemExit(0)
+
+print("wrong-version fixture reached build", file=sys.stderr)
+raise SystemExit(96)

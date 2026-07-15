@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import sys
+from xml.sax.saxutils import escape
+
+
+FORBIDDEN_VARIABLES = (
+    "BASH_ENV",
+    "CDPATH",
+    "DYLD_INSERT_LIBRARIES",
+    "ENV",
+    "FAKE_ROJO_LOG",
+    "LD_PRELOAD",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "RACER_PUBLISH_API_KEY",
+    "ROBLOX_API_KEY",
+)
+SECRET_MARKERS = ("pending-state-secret-", "sentinel-", "bootstrap-api-")
+
+if any(name in os.environ for name in FORBIDDEN_VARIABLES):
+    print("fixture Rojo received a forbidden environment variable", file=sys.stderr)
+    raise SystemExit(89)
+if any(
+    marker in value
+    for value in os.environ.values()
+    for marker in SECRET_MARKERS
+):
+    print("fixture Rojo received a credential value", file=sys.stderr)
+    raise SystemExit(89)
+
+if sys.argv[1:] == ["--version"]:
+    print("Rojo 7.5.1")
+    raise SystemExit(0)
+
+if len(sys.argv) < 4 or sys.argv[1] != "build" or "--output" not in sys.argv:
+    print("fixture Rojo received an unexpected command", file=sys.stderr)
+    raise SystemExit(90)
+
+output_index = sys.argv.index("--output") + 1
+if output_index >= len(sys.argv):
+    print("fixture Rojo did not receive an output path", file=sys.stderr)
+    raise SystemExit(90)
+
+output = Path(sys.argv[output_index])
+output.parent.mkdir(parents=True, exist_ok=True)
+build_info = Path("src/shared/GeneratedBuildInfo.lua").read_text()
+place_ids = Path("src/shared/GeneratedPlaceIds.lua").read_text()
+gameplay_path = Path("src/racer/shared/RacerConfig.lua")
+gameplay = gameplay_path.read_text() if gameplay_path.is_file() else ""
+items = [
+    '<Item class="ModuleScript"><Properties>',
+    '<string name="Name">GeneratedBuildInfo</string>',
+    f'<ProtectedString name="Source">{escape(build_info)}</ProtectedString>',
+    "</Properties></Item>",
+    '<Item class="ModuleScript"><Properties>',
+    '<string name="Name">GeneratedPlaceIds</string>',
+    f'<ProtectedString name="Source">{escape(place_ids)}</ProtectedString>',
+    "</Properties></Item>",
+]
+if gameplay:
+    items.extend(
+        (
+            '<Item class="ModuleScript"><Properties>',
+            '<string name="Name">RacerConfig</string>',
+            f'<ProtectedString name="Source">{escape(gameplay)}</ProtectedString>',
+            "</Properties></Item>",
+        )
+    )
+with output.open("w", encoding="utf-8", newline="\n") as stream:
+    stream.write('<roblox version="4">' + "".join(items) + "</roblox>\n")

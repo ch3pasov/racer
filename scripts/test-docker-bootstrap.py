@@ -18,6 +18,12 @@ ENTRYPOINT = ROOT / "scripts/docker-entrypoint.sh"
 README = ROOT / "README.md"
 
 CONTAINER_ENTRYPOINT = "/usr/local/bin/racer-docker-entrypoint"
+EXPECTED_AFTMAN_ARCHIVE_SHA256 = (
+    "194fe81e24ae7cc1f3141fd1d42db6cb60f03d42735d12ae865fe2db11ea6f0e"
+)
+EXPECTED_AFTMAN_BINARY_SHA256 = (
+    "3b13b10838fb7f7aafae16a9a01085439c75619bb9b78a1b5b787eab81ddf6e4"
+)
 EXPECTED_COMMAND_ARGUMENTS = ["bash", "-lc", "argument with spaces", ""]
 CREDENTIAL_NAMES = ("ROBLOX_API_KEY", "RACER_PUBLISH_API_KEY")
 API_SENTINEL = "bootstrap-api-" + hashlib.sha256(
@@ -147,6 +153,55 @@ def check_static_contract() -> None:
         fail("Dockerfile must run the bootstrap through ENTRYPOINT for every command")
     if "aftman-0.3.0-linux-x86_64.zip" not in dockerfile:
         fail("Dockerfile must retain the pinned x86_64 Aftman 0.3.0 archive")
+    if "ARG TARGETARCH\n" not in dockerfile or "ARG TARGETARCH=" in dockerfile:
+        fail("Dockerfile must require BuildKit to provide the selected target architecture")
+    if 'test "${TARGETARCH}" = "amd64"' not in dockerfile:
+        fail("Dockerfile must reject every target architecture except amd64")
+    if 'test "$(/usr/bin/dpkg --print-architecture)" = "amd64"' not in dockerfile:
+        fail("Dockerfile must verify the base image package architecture")
+    if dockerfile.count(EXPECTED_AFTMAN_ARCHIVE_SHA256) != 1:
+        fail("Dockerfile must pin the official Aftman 0.3.0 archive SHA-256 once")
+    if dockerfile.count(EXPECTED_AFTMAN_BINARY_SHA256) != 1:
+        fail("Dockerfile must pin the official Aftman 0.3.0 binary SHA-256 once")
+    if "ARG AFTMAN_" in dockerfile:
+        fail("Dockerfile must not allow Aftman hashes to be overridden by build args")
+    curl_command = (
+        "/usr/bin/curl --disable --fail --silent --show-error --location"
+    )
+    if curl_command not in dockerfile:
+        fail("Dockerfile must download Aftman with absolute config-free curl")
+    archive_check = (
+        "/usr/bin/printf '%s  %s\\n' \"${archive_sha256}\" \"${archive_path}\""
+    )
+    extracted_check = (
+        "/usr/bin/printf '%s  %s\\n' \"${binary_sha256}\" \"${extracted_path}\""
+    )
+    installed_check = (
+        "/usr/bin/printf '%s  %s\\n' \"${binary_sha256}\" /usr/local/bin/aftman"
+    )
+    for token in (archive_check, extracted_check, installed_check):
+        if token not in dockerfile:
+            fail("Dockerfile is missing an authenticated Aftman checksum stage")
+    download_index = dockerfile.index(curl_command)
+    archive_check_index = dockerfile.index(archive_check)
+    unzip_index = dockerfile.index('/usr/bin/unzip -j "${archive_path}"')
+    extracted_check_index = dockerfile.index(extracted_check)
+    install_index = dockerfile.index(
+        '/usr/bin/install -m 0755 "${extracted_path}" /usr/local/bin/aftman'
+    )
+    installed_check_index = dockerfile.index(installed_check)
+    if not (
+        download_index
+        < archive_check_index
+        < unzip_index
+        < extracted_check_index
+        < install_index
+        < installed_check_index
+    ):
+        fail(
+            "Dockerfile must verify archive, extracted binary, and installed Aftman "
+            "in that order"
+        )
     if not entrypoint.startswith("#!/bin/bash\n"):
         fail("entrypoint must start through the image's trusted absolute Bash")
 
