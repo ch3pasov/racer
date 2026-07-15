@@ -15,6 +15,7 @@ git -c safe.directory="${ROOT_DIR}" clone --quiet --no-hardlinks "${ROOT_DIR}" "
 
 # Exercise the current worktree scripts even when this test runs before its commit.
 for relative_path in \
+  scripts/build-racer-release.sh \
   scripts/finalize-studio-publish.sh \
   scripts/publish-place.sh \
   scripts/racer-publish-state.py; do
@@ -23,7 +24,7 @@ done
 git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" config user.name "Racer Release Test"
 git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" config user.email "racer-release-test@example.invalid"
 git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" add scripts
-git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" commit --quiet -m "pending publish test fixture"
+git -c safe.directory="${TEST_REPO}" -C "${TEST_REPO}" commit --quiet --allow-empty -m "pending publish test fixture"
 
 HELPER="${TEST_REPO}/scripts/build-racer-release.sh"
 PUBLISHER="${TEST_REPO}/scripts/publish-place.sh"
@@ -34,6 +35,8 @@ RACER_PLACE_ID="123630607312596"
 FIRST_BUILD="${TEMP_ROOT}/first.rbxlx"
 SECOND_BUILD="${TEMP_ROOT}/second.rbxlx"
 DIRTY_BUILD="${TEMP_ROOT}/dirty.rbxlx"
+FOREIGN_CWD_BUILD="${TEMP_ROOT}/foreign-cwd.rbxlx"
+FOREIGN_CALLER_DIR="${TEMP_ROOT}/foreign-caller"
 
 "${HELPER}" \
   "${GIT_COMMIT}" \
@@ -50,6 +53,20 @@ DIRTY_BUILD="${TEMP_ROOT}/dirty.rbxlx"
 
 if ! cmp -s "${FIRST_BUILD}" "${SECOND_BUILD}"; then
   echo "Fixed-metadata release builds were not byte-for-byte deterministic." >&2
+  exit 1
+fi
+mkdir -p "${FOREIGN_CALLER_DIR}"
+(
+  cd "${FOREIGN_CALLER_DIR}"
+  "${HELPER}" \
+    "${GIT_COMMIT}" \
+    "${FIXED_PUBLISHED_AT}" \
+    "${LOBBY_PLACE_ID}" \
+    "${RACER_PLACE_ID}" \
+    "${FOREIGN_CWD_BUILD}" >/dev/null
+)
+if ! cmp -s "${FIRST_BUILD}" "${FOREIGN_CWD_BUILD}"; then
+  echo "Release helper produced a different build from a caller directory without aftman.toml." >&2
   exit 1
 fi
 if ! grep -q "PublishedAt = &quot;${FIXED_PUBLISHED_AT}&quot;" "${FIRST_BUILD}" \

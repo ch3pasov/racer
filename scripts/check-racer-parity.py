@@ -141,6 +141,7 @@ if RELEASE_BUILD_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
 
 for token in [
     'EXPECTED_ROJO_VERSION="Rojo 7.5.1"',
+    'ACTUAL_ROJO_VERSION="$(LC_ALL=C rojo --version)"',
     'git_repo archive --format=tar --output="${ARCHIVE_FILE}" "${GIT_COMMIT}"',
     'tar -xf "${ARCHIVE_FILE}" -C "${SNAPSHOT_DIR}"',
     'BUILD_INFO_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedBuildInfo.lua"',
@@ -156,14 +157,28 @@ version_check_index = RELEASE_BUILD_SCRIPT.index(
     'if [[ "${ACTUAL_ROJO_VERSION}" != "${EXPECTED_ROJO_VERSION}" ]]'
 )
 archive_index = RELEASE_BUILD_SCRIPT.index("git_repo archive")
+extract_index = RELEASE_BUILD_SCRIPT.index(
+    'tar -xf "${ARCHIVE_FILE}" -C "${SNAPSHOT_DIR}"'
+)
 metadata_index = RELEASE_BUILD_SCRIPT.index(
     'BUILD_INFO_FILE="${SNAPSHOT_DIR}/src/shared/GeneratedBuildInfo.lua"'
 )
+snapshot_cwd_index = RELEASE_BUILD_SCRIPT.index('cd "${SNAPSHOT_DIR}"')
 rojo_build_index = RELEASE_BUILD_SCRIPT.index(
     'LC_ALL=C rojo build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"'
 )
-if not version_check_index < archive_index < metadata_index < rojo_build_index:
-    fail("Release builder must pin Rojo and build only from the archived snapshot")
+if not (
+    archive_index
+    < extract_index
+    < metadata_index
+    < snapshot_cwd_index
+    < version_check_index
+    < rojo_build_index
+):
+    fail(
+        "Release builder must check pinned Rojo and build from the same archived "
+        "snapshot working directory"
+    )
 
 for forbidden in [
     '"${ROOT_DIR}/src/shared/GeneratedBuildInfo.lua"',
@@ -178,6 +193,8 @@ if RELEASE_BUILD_TEST_PATH.stat().st_mode & 0o111 == 0:
 for token in [
     'FIXED_PUBLISHED_AT="2000-01-02T03:04:05Z"',
     'cmp -s "${FIRST_BUILD}" "${SECOND_BUILD}"',
+    'FOREIGN_CALLER_DIR="${TEMP_ROOT}/foreign-caller"',
+    'cmp -s "${FIRST_BUILD}" "${FOREIGN_CWD_BUILD}"',
     "Uncommitted integration-test mutation",
     'cmp -s "${FIRST_BUILD}" "${DIRTY_BUILD}"',
     '"${PUBLISHER}" --build-only',

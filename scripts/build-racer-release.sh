@@ -46,15 +46,6 @@ if [[ "${OUTPUT_FILE}" != /* ]]; then
   exit 2
 fi
 
-if ! ACTUAL_ROJO_VERSION="$(LC_ALL=C rojo --version)"; then
-  echo "Unable to run the pinned Rojo release builder." >&2
-  exit 1
-fi
-if [[ "${ACTUAL_ROJO_VERSION}" != "${EXPECTED_ROJO_VERSION}" ]]; then
-  echo "Release builds require ${EXPECTED_ROJO_VERSION}; found ${ACTUAL_ROJO_VERSION}." >&2
-  exit 1
-fi
-
 GIT_COMMIT_SHORT="$(git_repo rev-parse --short=12 "${GIT_COMMIT}^{commit}")"
 TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/racer-release-build.XXXXXX")"
 SNAPSHOT_DIR="${TEMP_ROOT}/snapshot"
@@ -97,6 +88,14 @@ EOF
 
 (
   cd "${SNAPSHOT_DIR}"
+  if ! ACTUAL_ROJO_VERSION="$(LC_ALL=C rojo --version)"; then
+    echo "Unable to run the pinned Rojo release builder." >&2
+    exit 1
+  fi
+  if [[ "${ACTUAL_ROJO_VERSION}" != "${EXPECTED_ROJO_VERSION}" ]]; then
+    echo "Release builds require ${EXPECTED_ROJO_VERSION}; found ${ACTUAL_ROJO_VERSION}." >&2
+    exit 1
+  fi
   LC_ALL=C rojo build "racer.project.json" --output "${SNAPSHOT_OUTPUT}"
 )
 
