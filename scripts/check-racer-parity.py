@@ -1307,7 +1307,7 @@ for token in [
     "local passengerUserId = if showOccupants then passengerUserIdFor(activeUserId) else 0",
     "then cachedThumbnailForUserId(passengerUserId)",
     "showOccupants and not showDriverAvatar",
-    "showOccupants and not showPassengerAvatar",
+    "showOccupants and passengerUserId > 0 and not showPassengerAvatar",
     "if RacerConfig.hasDriverOccupants(state.mode.Value) then avatarImageCacheRevision else 0",
 ]:
     if token not in CLIENT:
@@ -1323,6 +1323,13 @@ if CLIENT.count("task.delay(OCCUPANT_THUMBNAIL_RETRY_SECONDS, function()") != 1:
     fail("failed occupant thumbnails must schedule exactly one temporary-cache retry")
 if CLIENT.count("avatarImageCacheRevision += 1") != 2:
     fail("occupant cache completion and retry expiry must each invalidate world-screen renders")
+
+require(
+    r'setOccupantFallback\(\s*"PassengerFallback",\s*passengerUserId,\s*2,\s*0\.52,\s*'
+    r"showOccupants and passengerUserId > 0 and not showPassengerAvatar\s*\)",
+    CLIENT,
+    "v6+ must not invent a passenger fallback when no passenger player exists",
+)
 
 require(
     r"avatarImageCache\[userId\] = if hasImage then image else false\s*"

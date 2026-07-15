@@ -2118,7 +2118,7 @@ local function render(renderer, state)
 			passengerUserId,
 			2,
 			0.52,
-			showOccupants and not showPassengerAvatar
+			showOccupants and passengerUserId > 0 and not showPassengerAvatar
 		)
 	end
 
