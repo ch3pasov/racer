@@ -79,6 +79,20 @@ publish script tags successful Roblox versions as `racer-place-v<version>`.
 For example, `scripts/lookup-place-version.sh 153` shows the commit published as
 Roblox place version 153.
 
+## Building For a Studio Fallback
+
+From a committed, fully clean tree, build the exact release artifact without an
+Open Cloud key, universe id, or network request:
+
+```sh
+export ROBLOX_RACER_PLACE_ID="..."
+scripts/publish-place.sh --build-only
+```
+
+The command restores the tracked generated files after creating
+`build/racer.rbxlx` and prints its full commit and SHA-256 for Studio version
+notes. Publish that exact file through Studio before finalizing its mapping.
+
 ## Finalizing a Studio Publish
 
 Before recording a Studio publish, reopen the published Racer place in Studio

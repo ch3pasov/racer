@@ -1,18 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${ROBLOX_API_KEY:?ROBLOX_API_KEY is required}"
-: "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"
-: "${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}"
-
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT_DIR}"
 
 PROJECT_FILE="racer.project.json"
 OUTPUT_FILE="build/racer.rbxlx"
-PLACE_ID="${ROBLOX_RACER_PLACE_ID}"
-LOBBY_PLACE_ID="${ROBLOX_LOBBY_PLACE_ID:-0}"
 BUILD_INFO_FILE="src/shared/GeneratedBuildInfo.lua"
 PLACE_IDS_FILE="src/shared/GeneratedPlaceIds.lua"
 
@@ -20,15 +14,19 @@ git_repo() {
   git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
 }
 
-if [[ "${1:-}" != "" ]]; then
-  echo "Racer Lab is the only publish target in this repository; run scripts/publish-place.sh without arguments." >&2
+BUILD_ONLY="false"
+if [[ "$#" -eq 0 ]]; then
+  :
+elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]; then
+  BUILD_ONLY="true"
+else
+  echo "Usage: scripts/publish-place.sh [--build-only]" >&2
   exit 2
 fi
 
-if [[ ! "${ROBLOX_UNIVERSE_ID}" =~ ^[1-9][0-9]*$ ]]; then
-  echo "ROBLOX_UNIVERSE_ID must be a positive decimal integer." >&2
-  exit 2
-fi
+: "${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}"
+PLACE_ID="${ROBLOX_RACER_PLACE_ID}"
+LOBBY_PLACE_ID="${ROBLOX_LOBBY_PLACE_ID:-0}"
 
 if [[ ! "${PLACE_ID}" =~ ^[1-9][0-9]*$ ]]; then
   echo "ROBLOX_RACER_PLACE_ID must be a positive decimal integer." >&2
@@ -42,20 +40,12 @@ fi
 
 TREE_STATUS="$(git_repo status --porcelain=v1 --untracked-files=all --ignore-submodules=none)"
 if [[ -n "${TREE_STATUS}" ]]; then
-  echo "Refusing to publish from a dirty git tree. Commit or stash changes first." >&2
+  echo "Refusing to build or publish from a dirty git tree. Commit or stash changes first." >&2
   exit 1
 fi
 
 GIT_COMMIT="$(git_repo rev-parse HEAD)"
 GIT_COMMIT_SHORT="$(git_repo rev-parse --short=12 HEAD)"
-PREFLIGHT_TAG="racer-publish-preflight-$$"
-if git_repo rev-parse --verify --quiet "refs/tags/${PREFLIGHT_TAG}" >/dev/null; then
-  echo "Temporary publish preflight tag unexpectedly exists: ${PREFLIGHT_TAG}." >&2
-  exit 1
-fi
-git_repo update-ref "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}" ""
-git_repo update-ref -d "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}"
-
 PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 ORIGINAL_BUILD_INFO="$(mktemp)"
 ORIGINAL_PLACE_IDS="$(mktemp)"
@@ -85,6 +75,33 @@ return {
 EOF
 
 rojo build "${PROJECT_FILE}" --output "${OUTPUT_FILE}"
+
+if [[ "${BUILD_ONLY}" == "true" ]]; then
+  BUILD_SHA256="$(OUTPUT_FILE="${OUTPUT_FILE}" python3 -c 'import hashlib
+import os
+from pathlib import Path
+
+print(hashlib.sha256(Path(os.environ["OUTPUT_FILE"]).read_bytes()).hexdigest())')"
+  echo "Built ${OUTPUT_FILE} for Racer place ${PLACE_ID}"
+  echo "Commit: ${GIT_COMMIT}"
+  echo "SHA-256: ${BUILD_SHA256}"
+  exit 0
+fi
+
+: "${ROBLOX_API_KEY:?ROBLOX_API_KEY is required}"
+: "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"
+if [[ ! "${ROBLOX_UNIVERSE_ID}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ROBLOX_UNIVERSE_ID must be a positive decimal integer." >&2
+  exit 2
+fi
+
+PREFLIGHT_TAG="racer-publish-preflight-$$"
+if git_repo rev-parse --verify --quiet "refs/tags/${PREFLIGHT_TAG}" >/dev/null; then
+  echo "Temporary publish preflight tag unexpectedly exists: ${PREFLIGHT_TAG}." >&2
+  exit 1
+fi
+git_repo update-ref "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}" ""
+git_repo update-ref -d "refs/tags/${PREFLIGHT_TAG}" "${GIT_COMMIT}"
 
 PUBLISH_RESPONSE="$(curl --fail-with-body \
   --request POST \

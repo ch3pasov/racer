@@ -35,7 +35,14 @@ if "src/shared/GameConfig.lua" not in RACER_PROJECT.get("globIgnorePaths", []):
 
 for token in [
     '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
+    'if [[ "$#" -eq 0 ]]',
+    'elif [[ "$#" -eq 1 && "$1" == "--build-only" ]]',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
+    'trap restore_build_info EXIT',
+    'if [[ "${BUILD_ONLY}" == "true" ]]; then',
+    "hashlib.sha256",
+    'echo "Commit: ${GIT_COMMIT}"',
+    'echo "SHA-256: ${BUILD_SHA256}"',
     'payload.get("versionNumber")',
     'update-ref "refs/tags/${PREFLIGHT_TAG}"',
     'git_repo tag "${TAG}" "${GIT_COMMIT}"',
@@ -43,6 +50,35 @@ for token in [
 ]:
     if token not in PUBLISH_SCRIPT:
         fail(f"Racer publish contract is missing: {token}")
+
+restore_index = PUBLISH_SCRIPT.index("trap restore_build_info EXIT")
+build_index = PUBLISH_SCRIPT.index(
+    'rojo build "${PROJECT_FILE}" --output "${OUTPUT_FILE}"'
+)
+build_only_index = PUBLISH_SCRIPT.index(
+    'if [[ "${BUILD_ONLY}" == "true" ]]; then'
+)
+build_only_exit_index = PUBLISH_SCRIPT.index("exit 0", build_only_index)
+api_key_index = PUBLISH_SCRIPT.index(
+    ': "${ROBLOX_API_KEY:?ROBLOX_API_KEY is required}"'
+)
+universe_index = PUBLISH_SCRIPT.index(
+    ': "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"'
+)
+curl_index = PUBLISH_SCRIPT.index("curl --fail-with-body")
+if not (
+    restore_index
+    < build_index
+    < build_only_index
+    < build_only_exit_index
+    < api_key_index
+    < universe_index
+    < curl_index
+):
+    fail(
+        "build-only must restore generated files and exit after Rojo build "
+        "but before API-key, universe, or network use"
+    )
 
 for forbidden in ["ROBLOX_PLACE_ID", "git_repo tag -f", "git tag -f"]:
     if forbidden in PUBLISH_SCRIPT:
