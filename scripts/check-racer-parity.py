@@ -1292,6 +1292,7 @@ for token in [
     "local OCCUPANT_THUMBNAIL_RETRY_SECONDS = 5",
     "local avatarImagePending = {}",
     "local avatarImageCacheRevision = 0",
+    "local occupantRosterRevision = 0",
     "local function requestThumbnailForUserId(userId: number)",
     "or avatarImagePending[userId] == true",
     "avatarImagePending[userId] = true\n\ttask.spawn(function()",
@@ -1311,6 +1312,8 @@ for token in [
     "showOccupants and not showDriverAvatar",
     "showOccupants and passengerUserId > 0 and not showPassengerAvatar",
     "if RacerConfig.hasDriverOccupants(state.mode.Value) then avatarImageCacheRevision else 0",
+    "Players.PlayerAdded:Connect(invalidateOccupantRoster)",
+    "Players.PlayerRemoving:Connect(invalidateOccupantRoster)",
 ]:
     if token not in CLIENT:
         fail(f"v6+ occupant thumbnails must be async, cached, and preserve pending fallbacks: {token}")
@@ -1325,6 +1328,34 @@ if CLIENT.count("task.delay(OCCUPANT_THUMBNAIL_RETRY_SECONDS, function()") != 1:
     fail("failed occupant thumbnails must schedule exactly one temporary-cache retry")
 if CLIENT.count("avatarImageCacheRevision += 1") != 2:
     fail("occupant cache completion and retry expiry must each invalidate world-screen renders")
+if CLIENT.count("occupantRosterRevision") != 3:
+    fail("occupant roster revision must only be declared, incremented, and rendered")
+if CLIENT.count("Players.PlayerAdded:Connect(invalidateOccupantRoster)") != 1:
+    fail("occupant roster must invalidate exactly once when a player joins")
+if CLIENT.count("Players.PlayerRemoving:Connect(invalidateOccupantRoster)") != 1:
+    fail("occupant roster must invalidate exactly once when a player leaves")
+
+roster_invalidator = re.search(
+    r"local function invalidateOccupantRoster\(\)(.*?)\nend",
+    CLIENT,
+    re.DOTALL,
+)
+if not roster_invalidator or roster_invalidator.group(1).strip() != "occupantRosterRevision += 1":
+    fail("occupant roster invalidation must only advance its render revision")
+
+render_signature = re.search(
+    r"local function renderSignature\(state\): string(.*?)\nend",
+    CLIENT,
+    re.DOTALL,
+)
+if not render_signature:
+    fail("could not isolate the world-screen render signature")
+require(
+    r"if\s*RacerConfig\.hasDriverOccupants\(state\.mode\.Value\)\s*"
+    r"and state\.activeUserId\.Value > 0\s*then occupantRosterRevision\s*else 0",
+    render_signature.group(1),
+    "only occupied v6+ screens should rerender when the player roster changes",
+)
 
 require(
     r'setOccupantFallback\(\s*"PassengerFallback",\s*passengerUserId,\s*2,\s*0\.52,\s*'

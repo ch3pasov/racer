@@ -61,6 +61,7 @@ local useCollisionboxDebug = false
 local avatarImageCache = {}
 local avatarImagePending = {}
 local avatarImageCacheRevision = 0
+local occupantRosterRevision = 0
 local occupantFallbackPalette = {
 	Color3.fromRGB(255, 202, 88),
 	Color3.fromRGB(108, 221, 205),
@@ -69,6 +70,13 @@ local occupantFallbackPalette = {
 	Color3.fromRGB(134, 240, 150),
 	Color3.fromRGB(255, 221, 78),
 }
+
+local function invalidateOccupantRoster()
+	occupantRosterRevision += 1
+end
+
+Players.PlayerAdded:Connect(invalidateOccupantRoster)
+Players.PlayerRemoving:Connect(invalidateOccupantRoster)
 
 local keyMap = {
 	[Enum.KeyCode.A] = "left",
@@ -2153,6 +2161,10 @@ local function renderSignature(state): string
 		if useSpriteboxDebug then "spriteboxes" else "no-spriteboxes",
 		if useCollisionboxDebug then "collisionboxes" else "no-collisionboxes",
 		if RacerConfig.hasDriverOccupants(state.mode.Value) then avatarImageCacheRevision else 0,
+		if RacerConfig.hasDriverOccupants(state.mode.Value)
+				and state.activeUserId.Value > 0
+			then occupantRosterRevision
+			else 0,
 		v7BillboardText.Value,
 		math.floor(state.currentLapTime.Value * 10 + 0.5),
 		math.floor(state.lastLapTime.Value * 10 + 0.5),
