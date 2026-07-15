@@ -182,6 +182,14 @@ local recordPersonalStore = nil
 local recordUiEpoch = 0
 local V7_FRIENDS_BOARD_TITLE = "v7 Friends in Global Top 100"
 
+local function defaultPlayerSettings()
+	local values = {}
+	for settingName, setting in SETTING_DEFAULTS do
+		values[settingName] = setting.default
+	end
+	return values
+end
+
 local function playerScreenProfile(player: Player, screenId: string)
 	local profiles = playerScreenProfiles[player]
 	if not profiles then
@@ -192,6 +200,7 @@ local function playerScreenProfile(player: Player, screenId: string)
 	if not profile then
 		profile = {
 			fastLapTime = DEFAULT_FAST_LAP_TIME,
+			settings = defaultPlayerSettings(),
 		}
 		profiles[screenId] = profile
 	end
@@ -199,7 +208,14 @@ local function playerScreenProfile(player: Player, screenId: string)
 end
 
 local function hydrateSessionPlayerState(session, player: Player)
-	session.fastLapTime = playerScreenProfile(player, session.definition.Id).fastLapTime
+	local profile = playerScreenProfile(player, session.definition.Id)
+	session.fastLapTime = profile.fastLapTime
+	for settingName, value in profile.settings do
+		local valueObject = session.values[`Setting{settingName}`]
+		if valueObject then
+			valueObject.Value = value
+		end
+	end
 end
 
 local function rememberSessionFastLap(session)
@@ -209,8 +225,18 @@ local function rememberSessionFastLap(session)
 	end
 end
 
+local function rememberSessionSetting(session, player: Player, settingName: string, value: number)
+	playerScreenProfile(player, session.definition.Id).settings[settingName] = value
+end
+
 local function clearSessionPlayerState(session)
 	session.fastLapTime = DEFAULT_FAST_LAP_TIME
+	for settingName, setting in SETTING_DEFAULTS do
+		local valueObject = session.values[`Setting{settingName}`]
+		if valueObject then
+			valueObject.Value = setting.default
+		end
+	end
 end
 
 local function v7RecordGlobalStore()
@@ -1234,6 +1260,7 @@ local function adjustSetting(player: Player, settingName: string, direction: num
 		setting.min,
 		setting.max
 	)
+	rememberSessionSetting(session, player, settingName, valueObject.Value)
 end
 
 local function resetSettings(player: Player)
@@ -1245,6 +1272,7 @@ local function resetSettings(player: Player)
 		local valueObject = settingValue(session, settingName)
 		if valueObject then
 			valueObject.Value = setting.default
+			rememberSessionSetting(session, player, settingName, valueObject.Value)
 		end
 	end
 end

@@ -1465,6 +1465,39 @@ for exit_pattern in [
         "Racer exit paths must clear player-owned state before publishing an idle cabinet",
     )
 
+for token in [
+    "local function defaultPlayerSettings()",
+    "settings = defaultPlayerSettings()",
+    "for settingName, value in profile.settings do",
+    "local function rememberSessionSetting(",
+    "playerScreenProfile(player, session.definition.Id).settings[settingName] = value",
+    "for settingName, setting in SETTING_DEFAULTS do",
+    "valueObject.Value = setting.default",
+]:
+    if token not in SERVER:
+        fail(f"legacy renderer settings must be isolated per player and screen: {token}")
+
+if SERVER.count("rememberSessionSetting(session, player, settingName, valueObject.Value)") != 2:
+    fail("setting changes and resets must both write through to the active player-screen profile")
+
+require(
+    r"local function hydrateSessionPlayerState\(session, player: Player\)\s*"
+    r"local profile = playerScreenProfile\(player, session\.definition\.Id\)\s*"
+    r"session\.fastLapTime = profile\.fastLapTime\s*for settingName, value in profile\.settings do\s*"
+    r"local valueObject = session\.values\[`Setting\{settingName\}`\].*?valueObject\.Value = value",
+    SERVER,
+    "Racer entry must hydrate only the active player's settings into the shared cabinet",
+)
+
+require(
+    r"local function clearSessionPlayerState\(session\)\s*"
+    r"session\.fastLapTime = DEFAULT_FAST_LAP_TIME\s*for settingName, setting in SETTING_DEFAULTS do\s*"
+    r"local valueObject = session\.values\[`Setting\{settingName\}`\].*?"
+    r"valueObject\.Value = setting\.default",
+    SERVER,
+    "idle Racer cabinets must not retain the prior player's renderer settings",
+)
+
 require(
     r"if not globalOk or not personalOk then.*?"
     r"if isCurrentV7RecordUiRequest\(saveEpoch, player\) then\s*"
