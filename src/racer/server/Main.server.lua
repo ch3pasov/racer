@@ -178,6 +178,7 @@ local recordLeaderboardLabels = {}
 local recordGlobalStore = nil
 local recordPersonalStore = nil
 local recordUiEpoch = 0
+local V7_FRIENDS_BOARD_TITLE = "v7 Friends in Global Top 100"
 
 local function v7RecordGlobalStore()
 	if not recordGlobalStore then
@@ -578,7 +579,7 @@ local function refreshRecordLeaderboards(player: Player?)
 				return
 			end
 			setRecordLeaderboardText("self", leaderboardEmpty("v7 Your Top 10"))
-			setRecordLeaderboardText("friends", leaderboardEmpty("v7 Friends Top 10"))
+			setRecordLeaderboardText("friends", leaderboardEmpty(V7_FRIENDS_BOARD_TITLE))
 			setRecordLeaderboardText(
 				"global",
 				if globalOk
@@ -591,7 +592,7 @@ local function refreshRecordLeaderboards(player: Player?)
 	end
 
 	setRecordLeaderboardText("self", leaderboardLoading("v7 Your Top 10"))
-	setRecordLeaderboardText("friends", leaderboardLoading("v7 Friends Top 10"))
+	setRecordLeaderboardText("friends", leaderboardLoading(V7_FRIENDS_BOARD_TITLE))
 	setRecordLeaderboardText("global", leaderboardLoading("v7 Global Top 10"))
 	task.spawn(function()
 		local selfRows, selfOk = readPersonalTop(player)
@@ -626,8 +627,8 @@ local function refreshRecordLeaderboards(player: Player?)
 		setRecordLeaderboardText(
 			"friends",
 			if globalOk and friendsOk
-				then formatLeaderboard("v7 Friends Top 10", friendRows)
-				else leaderboardUnavailable("v7 Friends Top 10")
+				then formatLeaderboard(V7_FRIENDS_BOARD_TITLE, friendRows)
+				else leaderboardUnavailable(V7_FRIENDS_BOARD_TITLE)
 		)
 		setRecordLeaderboardText(
 			"global",
@@ -984,7 +985,7 @@ local function createV7Leaderboards()
 	)
 	createV7LeaderboardBoard(
 		"friends",
-		"v7 Friends Top 10",
+		V7_FRIENDS_BOARD_TITLE,
 		Vector3.new(0, 5.2, 66),
 		Color3.fromRGB(134, 240, 150)
 	)

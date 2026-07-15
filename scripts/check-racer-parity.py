@@ -668,6 +668,12 @@ require(
 if "RacerV6GlobalLap" in SERVER or "RacerV6PersonalRuns" in SERVER:
     fail("server record board persistence must not use old RacerV6 DataStore names")
 
+friends_board_title = 'V7_FRIENDS_BOARD_TITLE = "v7 Friends in Global Top 100"'
+if friends_board_title not in SERVER:
+    fail("v7 friends board must truthfully describe its bounded global top-100 source")
+if SERVER.count("V7_FRIENDS_BOARD_TITLE") != 6 or "v7 Friends Top 10" in SERVER:
+    fail("every v7 friends board state must use the shared truthful title")
+
 for token in [
     "addStraight(track, ROAD.LENGTH.SHORT)",
     "addFinalLowRollingHills(track)",
