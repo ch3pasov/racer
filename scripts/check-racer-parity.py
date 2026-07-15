@@ -587,12 +587,37 @@ for token in [
     "local function isValidV7RecordLap(session, player: Player?, lapTime: number): boolean",
     "session.activePlayer == player",
     "RacerConfig.hasRecordBoards(session.definition.Mode)",
+    "local recordUiEpoch = 0",
+    "local function v7ActivePlayer(): Player?",
+    "local function beginV7RecordUiRequest(): number",
+    "local function isCurrentV7RecordUiRequest(epoch: number, player: Player?): boolean",
+    "return epoch == recordUiEpoch and v7ActivePlayer() == player",
     "leaderboardUnavailable",
     "leaderboardLoading",
     "createV7Leaderboards()",
 ]:
     if token not in SERVER:
         fail(f"server record boards must belong to v7 only: {token}")
+
+if SERVER.count("if not isCurrentV7RecordUiRequest(refreshEpoch, player) then") != 2:
+    fail("both asynchronous v7 leaderboard readers must reject stale UI epochs and players")
+
+require(
+    r"local function refreshRecordLeaderboards\(player: Player\?\).*?"
+    r"if v7ActivePlayer\(\) ~= player then\s*return\s*end\s*"
+    r"local refreshEpoch = beginV7RecordUiRequest\(\)",
+    SERVER,
+    "v7 leaderboard refreshes must validate the active player before claiming a UI epoch",
+)
+
+require(
+    r"if not globalOk or not personalOk then.*?"
+    r"if isCurrentV7RecordUiRequest\(saveEpoch, player\) then\s*"
+    r"setRecordLeaderboardText\(.*?Save failed.*?end\s*end\s*"
+    r"refreshRecordLeaderboards\(v7ActivePlayer\(\)\)",
+    SERVER,
+    "v7 save failure text must be gated while post-save refresh targets the current v7 player",
+)
 
 if "RacerV6GlobalLap" in SERVER or "RacerV6PersonalRuns" in SERVER:
     fail("server record board persistence must not use old RacerV6 DataStore names")

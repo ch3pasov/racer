@@ -177,6 +177,7 @@ local perfLines = {}
 local recordLeaderboardLabels = {}
 local recordGlobalStore = nil
 local recordPersonalStore = nil
+local recordUiEpoch = 0
 
 local function v7RecordGlobalStore()
 	if not recordGlobalStore then
@@ -461,6 +462,23 @@ local function findPlayerSession(player: Player)
 	return nil
 end
 
+local function v7ActivePlayer(): Player?
+	local session = sessions.v7
+	if not session or not RacerConfig.hasRecordBoards(session.definition.Mode) then
+		return nil
+	end
+	return session.activePlayer
+end
+
+local function beginV7RecordUiRequest(): number
+	recordUiEpoch += 1
+	return recordUiEpoch
+end
+
+local function isCurrentV7RecordUiRequest(epoch: number, player: Player?): boolean
+	return epoch == recordUiEpoch and v7ActivePlayer() == player
+end
+
 local function decodePersonalRuns(raw)
 	if typeof(raw) ~= "string" or raw == "" then
 		return {}
@@ -547,10 +565,18 @@ local function friendIdSet(player: Player)
 end
 
 local function refreshRecordLeaderboards(player: Player?)
+	if v7ActivePlayer() ~= player then
+		return
+	end
+	local refreshEpoch = beginV7RecordUiRequest()
+
 	if not player then
 		setRecordLeaderboardText("global", leaderboardLoading("v7 Global Top 10"))
 		task.spawn(function()
 			local globalRows, globalOk = readGlobalTop(10)
+			if not isCurrentV7RecordUiRequest(refreshEpoch, player) then
+				return
+			end
 			setRecordLeaderboardText("self", leaderboardEmpty("v7 Your Top 10"))
 			setRecordLeaderboardText("friends", leaderboardEmpty("v7 Friends Top 10"))
 			setRecordLeaderboardText(
@@ -588,6 +614,9 @@ local function refreshRecordLeaderboards(player: Player?)
 				table.insert(globalTopTen, globalRows[index])
 			end
 		end
+		if not isCurrentV7RecordUiRequest(refreshEpoch, player) then
+			return
+		end
 		setRecordLeaderboardText(
 			"self",
 			if selfOk
@@ -624,7 +653,11 @@ local function recordLapForRecordBoards(session, player: Player, lapTime: number
 	if not isValidV7RecordLap(session, player, lapTime) then
 		return
 	end
+	if v7ActivePlayer() ~= player then
+		return
+	end
 	local lapMs = math.floor(lapTime * 1000 + 0.5)
+	local saveEpoch = beginV7RecordUiRequest()
 	setRecordLeaderboardText("self", `v7 Your Top 10\nSaving {formatLapTime(lapTime)}...`)
 	task.spawn(function()
 		local globalOk, globalErr = pcall(function()
@@ -655,12 +688,14 @@ local function recordLapForRecordBoards(session, player: Player, lapTime: number
 			warn(
 				`[RacerLab] v7 leaderboard save failed global={globalOk} {globalErr} personal={personalOk} {personalErr}`
 			)
-			setRecordLeaderboardText(
-				"self",
-				`v7 Your Top 10\nSave failed\n{formatLapTime(lapTime)}`
-			)
+			if isCurrentV7RecordUiRequest(saveEpoch, player) then
+				setRecordLeaderboardText(
+					"self",
+					`v7 Your Top 10\nSave failed\n{formatLapTime(lapTime)}`
+				)
+			end
 		end
-		refreshRecordLeaderboards(player)
+		refreshRecordLeaderboards(v7ActivePlayer())
 	end)
 end
 
