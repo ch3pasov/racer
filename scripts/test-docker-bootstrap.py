@@ -18,6 +18,9 @@ ENTRYPOINT = ROOT / "scripts/docker-entrypoint.sh"
 README = ROOT / "README.md"
 
 CONTAINER_ENTRYPOINT = "/usr/local/bin/racer-docker-entrypoint"
+CONTAINER_HOME = "/home/codex"
+CONTAINER_UID = 1000
+CONTAINER_GID = 1000
 EXPECTED_AFTMAN_ARCHIVE_SHA256 = (
     "194fe81e24ae7cc1f3141fd1d42db6cb60f03d42735d12ae865fe2db11ea6f0e"
 )
@@ -65,6 +68,16 @@ if event_path.exists():
     print("aftman was not the first bootstrap command", file=sys.stderr)
     raise SystemExit(82)
 
+expected_uid = int(os.environ["RACER_EXPECTED_UID"])
+if os.geteuid() != expected_uid:
+    print("bootstrap ran as an unexpected user", file=sys.stderr)
+    raise SystemExit(86)
+home = Path(os.environ["HOME"])
+aftman_home = home / ".aftman"
+if not aftman_home.is_dir() or aftman_home.stat().st_uid != expected_uid:
+    print("bootstrap received an unowned tool home", file=sys.stderr)
+    raise SystemExit(86)
+
 event_path.write_text(json.dumps(["aftman", *arguments]))
 raise SystemExit(int(os.environ.get("FAKE_AFTMAN_EXIT", "0")))
 '''
@@ -89,6 +102,9 @@ if os.environ.get("ROBLOX_API_KEY") != api_secret:
 if os.environ.get("RACER_PUBLISH_API_KEY") != private_secret:
     print("requested command did not retain the explicit private key", file=sys.stderr)
     raise SystemExit(84)
+if os.geteuid() != int(os.environ["RACER_EXPECTED_UID"]):
+    print("requested command ran as an unexpected user", file=sys.stderr)
+    raise SystemExit(84)
 
 event_path = Path(os.environ["RACER_BOOTSTRAP_EVENT"])
 result_path = Path(os.environ["RACER_BOOTSTRAP_RESULT"])
@@ -105,7 +121,9 @@ result_path.write_text(
         {
             "arguments": sys.argv[1:],
             "credentialsPreserved": True,
+            "home": os.environ["HOME"],
             "pid": os.getpid(),
+            "uid": os.geteuid(),
         },
         sort_keys=True,
     )
@@ -202,6 +220,28 @@ def check_static_contract() -> None:
             "Dockerfile must verify archive, extracted binary, and installed Aftman "
             "in that order"
         )
+    user_group = f"RUN /usr/sbin/groupadd --gid {CONTAINER_GID} codex"
+    aftman_home_create = (
+        "/usr/bin/install -d -m 0755 -o codex -g codex "
+        f"{CONTAINER_HOME}/.aftman"
+    )
+    home_environment = f'ENV HOME="{CONTAINER_HOME}"'
+    for token in (
+        user_group,
+        f"--uid {CONTAINER_UID}",
+        "--gid codex",
+        "--create-home",
+        aftman_home_create,
+        home_environment,
+    ):
+        if token not in dockerfile:
+            fail("Dockerfile must create the deterministic non-root tool owner and home")
+    aftman_home_index = dockerfile.index(aftman_home_create)
+    user_index = dockerfile.index("USER codex")
+    if aftman_home_index >= user_index:
+        fail("Dockerfile must initialize the owned Aftman directory before USER codex")
+    if dockerfile.count("USER ") != 1 or "USER root" in dockerfile:
+        fail("Dockerfile must have one final non-root USER instruction")
     if not entrypoint.startswith("#!/bin/bash\n"):
         fail("entrypoint must start through the image's trusted absolute Bash")
 
@@ -215,6 +255,14 @@ def check_static_contract() -> None:
         fail("roblox service must force linux/amd64 for the x86_64-only Aftman binary")
     if "\n    entrypoint:" in roblox_service:
         fail("Compose must not bypass the image bootstrap entrypoint")
+    if "\n    user:" in roblox_service:
+        fail("Compose must not override the image's non-root user")
+    if "\n      HOME:" in roblox_service:
+        fail("Compose must inherit HOME from the authenticated image")
+    if "      - roblox-tools:/home/codex/.aftman\n" not in roblox_service:
+        fail("Compose must mount the tool volume at the owned Aftman directory")
+    if "nocopy" in roblox_service:
+        fail("Compose must allow a fresh tool volume to inherit image ownership")
     if "ROBLOX_API_KEY" in roblox_service:
         fail("Compose must not inject the API key into ordinary container commands")
     if (
@@ -222,24 +270,48 @@ def check_static_contract() -> None:
         "scripts/publish-place.sh"
     ) not in readme:
         fail("README must document explicit API-key injection for one-shot publishing")
+    migration_command = (
+        "docker compose run --rm --user root --entrypoint /bin/chown roblox \\\n"
+        "  -R codex:codex /home/codex/.aftman"
+    )
+    if migration_command not in readme:
+        fail("README must document the one-time root-owned tool-volume migration")
+    if (
+        "docker compose run --rm roblox bash -lc" not in readme
+        or 'test "${EUID}" -eq 1000' not in readme
+        or 'test -O "${HOME}/.aftman"' not in readme
+        or 'test -w "${HOME}/.aftman"' not in readme
+    ):
+        fail("README must document the normal non-root tool-volume preflight")
+    if "On native Linux, UID 1000" not in readme or "Git common directory" not in readme:
+        fail("README must document the native-Linux repository ownership preflight")
 
-    statements = [
-        line.strip()
-        for line in entrypoint.splitlines()
-        if line.strip() and not line.startswith("#!")
-    ]
-    if statements != [
-        "set +x",
-        "set +a",
-        "set -euo pipefail",
+    for token in (
+        'if [[ "${EUID}" -eq 0 ]]; then',
+        'if [[ -z "${HOME:-}" || "${HOME}" != /* ]]; then',
+        'AFTMAN_HOME="${HOME}/.aftman"',
+        '! -O "${AFTMAN_HOME}"',
+        '! -w "${AFTMAN_HOME}"',
+        "follow the README migration",
+    ):
+        if token not in entrypoint:
+            fail("entrypoint must reject root and an unsafe Aftman tool volume")
+    aftman_install = (
         "/usr/bin/env -u ROBLOX_API_KEY -u RACER_PUBLISH_API_KEY "
-        "/usr/local/bin/aftman install --no-trust-check",
-        'exec "$@"',
-    ]:
-        fail(
-            "entrypoint must privately install pinned tools through absolute paths "
-            "before execing the requested command"
-        )
+        "/usr/local/bin/aftman install --no-trust-check"
+    )
+    if aftman_install not in entrypoint or 'exec "$@"' not in entrypoint:
+        fail("entrypoint must install pinned tools before execing the requested command")
+    if not (
+        entrypoint.index('if [[ "${EUID}" -eq 0 ]]')
+        < entrypoint.index('AFTMAN_HOME="${HOME}/.aftman"')
+        < entrypoint.index(aftman_install)
+        < entrypoint.index('exec "$@"')
+    ):
+        fail("entrypoint non-root guards must run before bootstrap and requested command")
+    for forbidden in ("chown ", "sudo ", "gosu ", "su -"):
+        if forbidden in entrypoint:
+            fail("entrypoint must not repair ownership or switch users at runtime")
     if not ENTRYPOINT.stat().st_mode & stat.S_IXUSR:
         fail("repository entrypoint must be executable")
 
@@ -267,10 +339,15 @@ def run_entrypoint(
 
 
 def check_runtime_contract() -> None:
+    if os.geteuid() == 0:
+        fail("Docker bootstrap runtime contract must itself run as a non-root user")
     with tempfile.TemporaryDirectory(prefix="racer-docker-bootstrap-test-") as temp:
         temp_root = Path(temp)
         fake_bin = temp_root / "bin"
         fake_bin.mkdir()
+        runtime_home = temp_root / "home"
+        aftman_home = runtime_home / ".aftman"
+        aftman_home.mkdir(parents=True)
         trusted_aftman = temp_root / "trusted-aftman"
         poisoned_aftman = fake_bin / "aftman"
         fake_command = fake_bin / "container-command"
@@ -293,9 +370,11 @@ def check_runtime_contract() -> None:
         environment = os.environ.copy()
         environment.update(
             {
+                "HOME": str(runtime_home),
                 "PATH": f"{fake_bin}:{environment.get('PATH', '')}",
                 "RACER_BOOTSTRAP_EVENT": str(event_path),
                 "RACER_BOOTSTRAP_RESULT": str(result_path),
+                "RACER_EXPECTED_UID": str(os.geteuid()),
                 "RACER_POISONED_AFTMAN_MARKER": str(poison_marker),
                 "RACER_PUBLISH_API_KEY": PRIVATE_SENTINEL,
                 "ROBLOX_API_KEY": API_SENTINEL,
@@ -316,6 +395,10 @@ def check_runtime_contract() -> None:
             fail("entrypoint did not preserve the requested command arguments")
         if result["credentialsPreserved"] is not True:
             fail("entrypoint did not preserve credentials for the requested command")
+        if result["uid"] != os.geteuid() or result["uid"] == 0:
+            fail("entrypoint did not keep bootstrap and the command non-root")
+        if result["home"] != str(runtime_home):
+            fail("entrypoint did not preserve the owned non-root HOME")
         if result["pid"] != process.pid:
             fail("entrypoint must exec the requested command instead of spawning it")
         if poison_marker.exists():
@@ -342,6 +425,50 @@ def check_runtime_contract() -> None:
         if poison_marker.exists():
             fail("failing entrypoint resolved Aftman through mutable PATH")
         assert_no_credentials("failing bootstrap event", event_path.read_text())
+
+        event_path.unlink()
+        aftman_home.chmod(0o500)
+        process, stdout, stderr = run_entrypoint(
+            runtime_entrypoint, environment, fake_command
+        )
+        assert_no_credentials("unwritable-volume entrypoint output", stdout + stderr)
+        if process.returncode == 0 or "follow the README migration" not in stderr:
+            fail("entrypoint did not reject an unwritable tool volume")
+        if event_path.exists() or result_path.exists():
+            fail("unsafe tool-volume refusal reached Aftman or the requested command")
+        aftman_home.chmod(0o700)
+
+        relative_home_environment = environment | {"HOME": "relative-home"}
+        process, stdout, stderr = run_entrypoint(
+            runtime_entrypoint, relative_home_environment, fake_command
+        )
+        assert_no_credentials("relative-HOME entrypoint output", stdout + stderr)
+        if process.returncode == 0 or "absolute non-root HOME" not in stderr:
+            fail("entrypoint did not reject a relative HOME")
+        if event_path.exists() or result_path.exists():
+            fail("relative-HOME refusal reached Aftman or the requested command")
+
+        aftman_home.rmdir()
+        process, stdout, stderr = run_entrypoint(
+            runtime_entrypoint, environment, fake_command
+        )
+        assert_no_credentials("missing-volume entrypoint output", stdout + stderr)
+        if process.returncode == 0 or "follow the README migration" not in stderr:
+            fail("entrypoint did not reject a missing tool volume")
+        if event_path.exists() or result_path.exists():
+            fail("missing tool-volume refusal reached Aftman or the requested command")
+
+        aftman_target = runtime_home / "aftman-target"
+        aftman_target.mkdir()
+        aftman_home.symlink_to(aftman_target, target_is_directory=True)
+        process, stdout, stderr = run_entrypoint(
+            runtime_entrypoint, environment, fake_command
+        )
+        assert_no_credentials("symlink-volume entrypoint output", stdout + stderr)
+        if process.returncode == 0 or "follow the README migration" not in stderr:
+            fail("entrypoint did not reject a symlink tool volume")
+        if event_path.exists() or result_path.exists():
+            fail("symlink tool-volume refusal reached Aftman or the requested command")
 
 
 def main() -> None:

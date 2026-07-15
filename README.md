@@ -105,6 +105,37 @@ requested one-shot command still receives a key explicitly passed with `-e`.
 Even a fresh `docker compose run --rm roblox bash` therefore has the
 repository-pinned tools available without exposing the publish key to bootstrap.
 
+The image and Compose service run as the non-root `codex` user with UID/GID
+1000. If `roblox-tools` was created by an older checkout that ran Compose as
+root, migrate that named volume once after rebuilding the image:
+
+```sh
+docker compose build
+docker compose run --rm --user root --entrypoint /bin/chown roblox \
+  -R codex:codex /home/codex/.aftman
+```
+
+That one-time command intentionally bypasses the normal non-root entrypoint. If
+the cached Aftman downloads are disposable, `docker compose down --volumes`
+followed by `docker compose build` is an equivalent reset. Normal commands now
+refuse to bootstrap as root or to use a tool volume that is not owned and
+writable by the container user.
+
+Verify the normal runtime identity and tool-volume ownership after migrating or
+recreating the volume:
+
+```sh
+docker compose run --rm roblox bash -lc \
+  'test "${EUID}" -eq 1000 && test -O "${HOME}/.aftman" && test -w "${HOME}/.aftman"'
+```
+
+On native Linux, UID 1000 in the container must match the owner allowed to write
+this checkout, including its resolved Git common directory. Treat a mismatch as
+a blocker for container publishing: use the host release workflow or align the
+repository ownership before continuing. Docker Desktop performs bind-mount UID
+mapping, so validate actual write access there instead of comparing numeric host
+and container UIDs.
+
 Publishing refuses to run from a dirty git tree. The published place includes
 the source commit in `ReplicatedStorage.Shared.GeneratedBuildInfo`, and the
 publish script tags successful Roblox versions as `racer-place-v<version>`.

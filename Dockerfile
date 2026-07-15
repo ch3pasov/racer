@@ -35,7 +35,16 @@ RUN set -eu; \
 
 COPY --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/racer-docker-entrypoint
 
-RUN useradd -m -s /bin/bash codex
+RUN /usr/sbin/groupadd --gid 1000 codex \
+    && /usr/sbin/useradd \
+        --uid 1000 \
+        --gid codex \
+        --create-home \
+        --shell /bin/bash \
+        codex \
+    && /usr/bin/install -d -m 0755 -o codex -g codex /home/codex/.aftman
+
+ENV HOME="/home/codex"
 USER codex
 WORKDIR /workspace
 

@@ -575,26 +575,62 @@ for token in [
         fail(f"Docker Aftman authentication contract is missing: {token}")
 if "ARG TARGETARCH=" in DOCKERFILE or "ARG AFTMAN_" in DOCKERFILE:
     fail("Docker must not default its architecture or expose overridable Aftman hashes")
+for token in [
+    "RUN /usr/sbin/groupadd --gid 1000 codex",
+    "--uid 1000",
+    "--gid codex",
+    "--create-home",
+    "/usr/bin/install -d -m 0755 -o codex -g codex /home/codex/.aftman",
+    'ENV HOME="/home/codex"',
+    "USER codex",
+]:
+    if token not in DOCKERFILE:
+        fail(f"Docker non-root runtime contract is missing: {token}")
+if not (
+    DOCKERFILE.index("/home/codex/.aftman")
+    < DOCKERFILE.index("USER codex")
+    < DOCKERFILE.index("ENTRYPOINT")
+):
+    fail("Docker must initialize the owned tool home before its non-root runtime")
+if DOCKERFILE.count("USER ") != 1 or "USER root" in DOCKERFILE:
+    fail("Docker image must have exactly one final non-root user")
 
 if "ROBLOX_API_KEY" in DOCKER_COMPOSE:
     fail("Compose must not inject the Roblox API key into ordinary commands")
+if "\n    user:" in DOCKER_COMPOSE:
+    fail("Compose must not override the image's non-root user")
+if "\n      HOME:" in DOCKER_COMPOSE:
+    fail("Compose must inherit the image's non-root HOME")
+if "      - roblox-tools:/home/codex/.aftman\n" not in DOCKER_COMPOSE:
+    fail("Compose must mount its tool volume at the owned Aftman directory")
+if "nocopy" in DOCKER_COMPOSE:
+    fail("Compose must initialize a fresh tool volume from image ownership")
 if not DOCKER_ENTRYPOINT.startswith("#!/bin/bash\n"):
     fail("Docker bootstrap must start through the image's trusted absolute Bash")
 
-docker_entrypoint_statements = [
-    line.strip()
-    for line in DOCKER_ENTRYPOINT.splitlines()
-    if line.strip() and not line.lstrip().startswith("#")
-]
-if docker_entrypoint_statements != [
-    "set +x",
-    "set +a",
-    "set -euo pipefail",
+for token in [
+    'if [[ "${EUID}" -eq 0 ]]; then',
+    'if [[ -z "${HOME:-}" || "${HOME}" != /* ]]; then',
+    'AFTMAN_HOME="${HOME}/.aftman"',
+    '! -O "${AFTMAN_HOME}"',
+    '! -w "${AFTMAN_HOME}"',
+    "follow the README migration",
     "/usr/bin/env -u ROBLOX_API_KEY -u RACER_PUBLISH_API_KEY "
     "/usr/local/bin/aftman install --no-trust-check",
     'exec "$@"',
 ]:
-    fail("Docker bootstrap must isolate credentials and use trusted absolute binaries")
+    if token not in DOCKER_ENTRYPOINT:
+        fail(f"Docker non-root bootstrap contract is missing: {token}")
+if not (
+    DOCKER_ENTRYPOINT.index('if [[ "${EUID}" -eq 0 ]]')
+    < DOCKER_ENTRYPOINT.index('AFTMAN_HOME="${HOME}/.aftman"')
+    < DOCKER_ENTRYPOINT.index("/usr/local/bin/aftman install")
+    < DOCKER_ENTRYPOINT.index('exec "$@"')
+):
+    fail("Docker bootstrap must guard non-root ownership before installing tools")
+for forbidden in ("chown ", "sudo ", "gosu ", "su -"):
+    if forbidden in DOCKER_ENTRYPOINT:
+        fail("Docker bootstrap must not repair ownership or switch users at runtime")
 
 for token in [
     'CREDENTIAL_NAMES = ("ROBLOX_API_KEY", "RACER_PUBLISH_API_KEY")',
@@ -602,6 +638,12 @@ for token in [
     '"credentialsPreserved": True',
     'assert_no_credentials("successful entrypoint output"',
     'if "ROBLOX_API_KEY" in roblox_service:',
+    'if "\\n    user:" in roblox_service:',
+    'runtime contract must itself run as a non-root user',
+    'entrypoint did not reject an unwritable tool volume',
+    'entrypoint did not reject a relative HOME',
+    'entrypoint did not reject a missing tool volume',
+    'entrypoint did not reject a symlink tool volume',
 ]:
     if token not in DOCKER_BOOTSTRAP_TEST:
         fail(f"Docker bootstrap credential regression coverage is missing: {token}")
@@ -620,6 +662,15 @@ if (
     not in README
 ):
     fail("README must require explicit API-key injection for container publishing")
+if (
+    "docker compose run --rm --user root --entrypoint /bin/chown roblox"
+    not in README
+    or "On native Linux, UID 1000" not in README
+    or "Git common directory" not in README
+    or 'test "${EUID}" -eq 1000' not in README
+    or 'test -O "${HOME}/.aftman"' not in README
+):
+    fail("README must document tool-volume migration and native-Linux ownership")
 
 for token in [
     "operation_id(operation)",
