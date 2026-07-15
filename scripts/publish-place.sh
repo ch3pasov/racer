@@ -1,9 +1,12 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Never allow an inherited `bash -x` to trace a credential expansion.
 set +x
 # Prevent `bash -a`/allexport from exporting the private shell copy below.
 set +a
 set -euo pipefail
+
+LOCK_CONTEXT_VALUE="racer-release-lock-v1"
+SECRET_CONTEXT_VALUE="racer-release-secret-v1"
 
 BUILD_ONLY="false"
 if [[ "$#" -eq 0 ]]; then
@@ -16,32 +19,118 @@ else
   exit 2
 fi
 
-# Keep the Open Cloud key in this shell only. Build-only must neither inspect
-# nor export it, while normal publishing validates it before any child process.
-unset RACER_PUBLISH_API_KEY
-if [[ "${BUILD_ONLY}" == "true" ]]; then
-  unset ROBLOX_API_KEY
+# Identify the trusted initial invocation or the exact helper-created context
+# using shell builtins only. Partial/spoofed contexts fail before any child.
+if [[ -z "${RACER_RELEASE_LOCK_CONTEXT+x}" && -z "${RACER_RELEASE_LOCK_FD+x}" ]]; then
+  RELEASE_PHASE="initial"
+elif [[ "${RACER_RELEASE_LOCK_CONTEXT-}" == "${LOCK_CONTEXT_VALUE}" \
+  && "${RACER_RELEASE_LOCK_FD-}" == "8" ]]; then
+  RELEASE_PHASE="locked"
 else
-  if [[ -z "${ROBLOX_API_KEY:-}" ]]; then
-    unset ROBLOX_API_KEY
-    echo "ROBLOX_API_KEY is required." >&2
-    exit 2
-  fi
-  RACER_PUBLISH_API_KEY="${ROBLOX_API_KEY}"
-  export -n RACER_PUBLISH_API_KEY
-  unset ROBLOX_API_KEY
-  if [[ "${RACER_PUBLISH_API_KEY}" == *$'\r'* ]] \
-    || [[ "${RACER_PUBLISH_API_KEY}" == *$'\n'* ]]; then
-    unset RACER_PUBLISH_API_KEY
-    echo "ROBLOX_API_KEY must not contain CR or LF." >&2
-    exit 2
-  fi
-  readonly RACER_PUBLISH_API_KEY
+  unset ROBLOX_API_KEY RACER_PUBLISH_API_KEY
+  echo "Racer release lock context is missing, partial, or spoofed." >&2
+  exit 1
 fi
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-cd "${ROOT_DIR}"
+# Keep the Open Cloud key in this shell only. Build-only never inspects it.
+# The locked process must consume and close FD 9 before starting any child.
+unset RACER_PUBLISH_API_KEY
+if [[ "${RELEASE_PHASE}" == "locked" ]]; then
+  unset ROBLOX_API_KEY
+  if [[ "${BUILD_ONLY}" == "true" ]]; then
+    if [[ -n "${RACER_RELEASE_SECRET_CONTEXT+x}" \
+      || -n "${RACER_RELEASE_SECRET_FD+x}" ]]; then
+      echo "Build-only release received an unexpected secret context." >&2
+      exit 1
+    fi
+    if { builtin true <&9; } 2>/dev/null; then
+      exec 9<&-
+      echo "Build-only release received an unexpected secret FD." >&2
+      exit 1
+    fi
+  else
+    if [[ "${RACER_RELEASE_SECRET_CONTEXT-}" != "${SECRET_CONTEXT_VALUE}" \
+      || "${RACER_RELEASE_SECRET_FD-}" != "9" ]]; then
+      echo "Racer release secret context is missing, partial, or spoofed." >&2
+      exit 1
+    fi
+    if ! IFS= builtin read -r -d '' RACER_PUBLISH_API_KEY <&9; then
+      exec 9<&-
+      unset RACER_PUBLISH_API_KEY RACER_RELEASE_SECRET_CONTEXT RACER_RELEASE_SECRET_FD
+      echo "Racer release secret pipe was incomplete." >&2
+      exit 1
+    fi
+    if IFS= builtin read -r -n 1 _RACER_SECRET_TRAILING <&9; then
+      exec 9<&-
+      unset RACER_PUBLISH_API_KEY RACER_RELEASE_SECRET_CONTEXT RACER_RELEASE_SECRET_FD
+      echo "Racer release secret pipe contained trailing data." >&2
+      exit 1
+    fi
+    exec 9<&-
+    unset RACER_RELEASE_SECRET_CONTEXT RACER_RELEASE_SECRET_FD _RACER_SECRET_TRAILING
+    if [[ -z "${RACER_PUBLISH_API_KEY}" \
+      || "${RACER_PUBLISH_API_KEY}" == *$'\r'* \
+      || "${RACER_PUBLISH_API_KEY}" == *$'\n'* ]]; then
+      unset RACER_PUBLISH_API_KEY
+      echo "Racer release secret pipe contained an invalid API key." >&2
+      exit 2
+    fi
+    export -n RACER_PUBLISH_API_KEY
+  fi
+else
+  if [[ -n "${RACER_RELEASE_SECRET_CONTEXT+x}" \
+    || -n "${RACER_RELEASE_SECRET_FD+x}" ]]; then
+    unset ROBLOX_API_KEY
+    echo "Racer release acquisition received a preexisting secret context." >&2
+    exit 1
+  fi
+  if [[ "${BUILD_ONLY}" == "true" ]]; then
+    unset ROBLOX_API_KEY
+  else
+    if [[ -z "${ROBLOX_API_KEY:-}" ]]; then
+      unset ROBLOX_API_KEY
+      echo "ROBLOX_API_KEY is required." >&2
+      exit 2
+    fi
+    RACER_PUBLISH_API_KEY="${ROBLOX_API_KEY}"
+    export -n RACER_PUBLISH_API_KEY
+    unset ROBLOX_API_KEY
+    if [[ "${RACER_PUBLISH_API_KEY}" == *$'\r'* \
+      || "${RACER_PUBLISH_API_KEY}" == *$'\n'* ]]; then
+      unset RACER_PUBLISH_API_KEY
+      echo "ROBLOX_API_KEY must not contain CR or LF." >&2
+      exit 2
+    fi
+  fi
+fi
+
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+case "${SCRIPT_SOURCE}" in
+  /*) SCRIPT_CANDIDATE="${SCRIPT_SOURCE}" ;;
+  */*) SCRIPT_CANDIDATE="${PWD}/${SCRIPT_SOURCE}" ;;
+  *)
+    unset RACER_PUBLISH_API_KEY
+    echo "Publish script must be invoked through an explicit path." >&2
+    exit 1
+    ;;
+esac
+SCRIPT_BASENAME="${SCRIPT_CANDIDATE##*/}"
+if ! SCRIPT_PARENT="$(/usr/bin/dirname -- "${SCRIPT_CANDIDATE}" 8>&-)"; then
+  unset RACER_PUBLISH_API_KEY
+  echo "Cannot resolve the publish script directory." >&2
+  exit 1
+fi
+builtin cd -P -- "${SCRIPT_PARENT}"
+SCRIPT_DIR="${PWD}"
+SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_BASENAME}"
+builtin cd -P -- "${SCRIPT_DIR}/.."
+ROOT_DIR="${PWD}"
+if [[ "${SCRIPT_PATH}" != "${ROOT_DIR}/scripts/publish-place.sh" \
+  || -L "${SCRIPT_PATH}" || ! -f "${SCRIPT_PATH}" ]]; then
+  unset RACER_PUBLISH_API_KEY
+  echo "Publish script path is not the trusted repository script." >&2
+  exit 1
+fi
 
 OUTPUT_LABEL="build/racer.rbxlx"
 OUTPUT_FILE="${ROOT_DIR}/${OUTPUT_LABEL}"
@@ -50,10 +139,87 @@ STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"
 FINALIZER="${SCRIPT_DIR}/finalize-studio-publish.sh"
 PENDING_LABEL="build/racer-publish-pending.json"
 PENDING_REF="refs/racer-publish/pending"
-RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"
+
+if [[ -z "${HOME:-}" || "${HOME}" != /* ]]; then
+  unset RACER_PUBLISH_API_KEY
+  echo "Racer releases require an absolute HOME." >&2
+  exit 1
+fi
+RELEASE_TMPDIR="${TMPDIR:-/tmp}"
+if [[ "${RELEASE_TMPDIR}" != /* ]]; then
+  unset RACER_PUBLISH_API_KEY
+  echo "Racer releases require an absolute TMPDIR." >&2
+  exit 1
+fi
+
+if [[ "${RELEASE_PHASE}" == "initial" ]]; then
+  if ! EARLY_TREE_STATUS="$(
+    /usr/bin/env -i \
+      HOME=/ XDG_CONFIG_HOME=/dev/null PATH=/usr/bin:/bin LC_ALL=C LANG=C TZ=UTC \
+      GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+      /usr/bin/git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" \
+      status --porcelain=v1 --untracked-files=all --ignore-submodules=none 8>&-
+  )"; then
+    unset RACER_PUBLISH_API_KEY
+    echo "Cannot verify the Racer release tree before lock handoff." >&2
+    exit 1
+  fi
+  if [[ -n "${EARLY_TREE_STATUS}" ]]; then
+    unset RACER_PUBLISH_API_KEY
+    echo "Refusing to build or publish from a dirty git tree. Commit or stash changes first." >&2
+    exit 1
+  fi
+  unset EARLY_TREE_STATUS
+
+  REEXEC_ENV=(
+    "HOME=${HOME}"
+    "TMPDIR=${RELEASE_TMPDIR}"
+    "PATH=/usr/bin:/bin"
+    "LC_ALL=C"
+    "LANG=C"
+    "TZ=UTC"
+  )
+  for RELEASE_NAME in ROBLOX_LOBBY_PLACE_ID ROBLOX_RACER_PLACE_ID ROBLOX_UNIVERSE_ID; do
+    if [[ -n "${!RELEASE_NAME+x}" ]]; then
+      REEXEC_ENV+=("${RELEASE_NAME}=${!RELEASE_NAME}")
+    fi
+  done
+  LOCK_ARGUMENTS=(with-release-lock)
+  if [[ "${BUILD_ONLY}" == "true" ]]; then
+    LOCK_ARGUMENTS+=(-- /bin/bash -p "${SCRIPT_PATH}" --build-only)
+  else
+    exec 9< <(builtin printf '%s\0' "${RACER_PUBLISH_API_KEY}")
+    unset RACER_PUBLISH_API_KEY
+    LOCK_ARGUMENTS+=(--secret-fd 9 -- /bin/bash -p "${SCRIPT_PATH}")
+  fi
+  exec /usr/bin/env -i "${REEXEC_ENV[@]}" \
+    /usr/bin/python3 -I "${STATE_HELPER}" "${LOCK_ARGUMENTS[@]}"
+  echo "Cannot exec the Racer release-lock helper." >&2
+  exit 1
+fi
+
+# This is intentionally the first child after the locked process consumed FD 9.
+if ! /usr/bin/env -i \
+  HOME="${HOME}" TMPDIR="${RELEASE_TMPDIR}" PATH=/usr/bin:/bin \
+  LC_ALL=C LANG=C TZ=UTC \
+  RACER_RELEASE_LOCK_CONTEXT="${LOCK_CONTEXT_VALUE}" RACER_RELEASE_LOCK_FD=8 \
+  /usr/bin/python3 -I "${STATE_HELPER}" assert-release-lock; then
+  unset RACER_PUBLISH_API_KEY
+  exit 1
+fi
+
+state_helper() {
+  /usr/bin/env -i \
+    HOME="${HOME}" TMPDIR="${RELEASE_TMPDIR}" PATH=/usr/bin:/bin \
+    LC_ALL=C LANG=C TZ=UTC \
+    /usr/bin/python3 -I "${STATE_HELPER}" "$@"
+}
 
 git_repo() {
-  git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
+  /usr/bin/env -i \
+    HOME=/ XDG_CONFIG_HOME=/dev/null PATH=/usr/bin:/bin LC_ALL=C LANG=C TZ=UTC \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    /usr/bin/git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
 }
 
 PENDING_REF_COMMIT=""
@@ -170,7 +336,8 @@ create_pending_ref() {
 }
 
 sha256_file() {
-  TARGET_FILE="$1" python3 -c 'import hashlib
+  /usr/bin/env -i TARGET_FILE="$1" PATH=/usr/bin:/bin LC_ALL=C LANG=C \
+    /usr/bin/python3 -I -c 'import hashlib
 import os
 from pathlib import Path
 
@@ -188,23 +355,14 @@ require_clean_tree() {
 
 TEMP_ROOT=""
 INSTALL_TEMP=""
-RELEASE_LOCK_HELD="false"
-
-release_publish_lock() {
-  if [[ "${RELEASE_LOCK_HELD}" == "true" ]]; then
-    rmdir "${RELEASE_LOCK_DIR}"
-    RELEASE_LOCK_HELD="false"
-  fi
-}
 
 cleanup() {
   if [[ -n "${INSTALL_TEMP}" ]]; then
-    rm -f "${INSTALL_TEMP}"
+    /bin/rm -f "${INSTALL_TEMP}"
   fi
   if [[ -n "${TEMP_ROOT}" ]]; then
-    rm -rf "${TEMP_ROOT}"
+    /bin/rm -rf "${TEMP_ROOT}"
   fi
-  release_publish_lock
 }
 trap cleanup EXIT
 
@@ -235,28 +393,21 @@ if [[ ! -x "${FINALIZER}" ]]; then
   exit 1
 fi
 
-mkdir -p "$(dirname -- "${RELEASE_LOCK_DIR}")"
-if ! mkdir "${RELEASE_LOCK_DIR}"; then
-  echo "Another Racer release operation holds ${RELEASE_LOCK_DIR#"${ROOT_DIR}/"}." >&2
-  echo "If no release process is running, inspect pending state before removing a stale lock." >&2
-  exit 1
-fi
-RELEASE_LOCK_HELD="true"
-
 # A manifest and its private git recovery ref must both be absent before a new build.
 require_pending_ref_absent
 # Any state file, including a corrupt one, blocks before the artifact can be rebuilt.
-"${STATE_HELPER}" assert-absent
+state_helper assert-absent
 
 require_clean_tree
 
 GIT_COMMIT="$(git_repo rev-parse HEAD)"
 GIT_COMMIT_SHORT="$(git_repo rev-parse --short=12 HEAD)"
-PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/racer-publish.XXXXXX")"
+PUBLISHED_AT="$(/usr/bin/env -i PATH=/usr/bin:/bin TZ=UTC \
+  /bin/date -u +"%Y-%m-%dT%H:%M:%SZ")"
+TEMP_ROOT="$(/usr/bin/mktemp -d "${RELEASE_TMPDIR}/racer-publish.XXXXXX")"
 PRIVATE_ARTIFACT="${TEMP_ROOT}/racer.rbxlx"
 
-"${BUILD_HELPER}" \
+/bin/bash -p "${BUILD_HELPER}" \
   "${GIT_COMMIT}" \
   "${PUBLISHED_AT}" \
   "${LOBBY_PLACE_ID}" \
@@ -278,11 +429,13 @@ require_release_state() {
 }
 
 atomic_install_artifact() {
-  mkdir -p "$(dirname -- "${OUTPUT_FILE}")"
-  INSTALL_TEMP="$(mktemp "$(dirname -- "${OUTPUT_FILE}")/.racer.rbxlx.XXXXXX")"
-  cp "${PRIVATE_ARTIFACT}" "${INSTALL_TEMP}"
-  chmod 0644 "${INSTALL_TEMP}"
-  mv -f "${INSTALL_TEMP}" "${OUTPUT_FILE}"
+  local output_directory
+  output_directory="$(/usr/bin/dirname -- "${OUTPUT_FILE}")"
+  /bin/mkdir -p "${output_directory}"
+  INSTALL_TEMP="$(/usr/bin/mktemp "${output_directory}/.racer.rbxlx.XXXXXX")"
+  /bin/cp "${PRIVATE_ARTIFACT}" "${INSTALL_TEMP}"
+  /bin/chmod 0644 "${INSTALL_TEMP}"
+  /bin/mv -f "${INSTALL_TEMP}" "${OUTPUT_FILE}"
   INSTALL_TEMP=""
   if [[ "$(sha256_file "${OUTPUT_FILE}")" != "${BUILD_SHA256}" ]]; then
     echo "Installed Racer release artifact does not match the private build." >&2
@@ -317,7 +470,7 @@ create_pending_state() {
   if [[ "${mode}" == "open-cloud" ]]; then
     arguments+=(--universe-id "${ROBLOX_UNIVERSE_ID}")
   fi
-  manifest_sha="$("${STATE_HELPER}" "${arguments[@]}")"
+  manifest_sha="$(state_helper "${arguments[@]}")"
   if [[ "${manifest_sha}" != "${BUILD_SHA256}" ]]; then
     echo "Pending publish state recorded an unexpected artifact SHA-256." >&2
     exit 1
@@ -352,22 +505,27 @@ create_pending_state "open-cloud"
 # The POST must still match both the private snapshot and the durable manifest.
 require_release_state
 require_installed_artifact
-if [[ "$("${STATE_HELPER}" validate-artifact)" != "${BUILD_SHA256}" ]]; then
+if [[ "$(state_helper validate-artifact)" != "${BUILD_SHA256}" ]]; then
   echo "Pending publish state no longer matches the Racer release artifact." >&2
   exit 1
 fi
 
-if ! PUBLISH_RESPONSE="$(env -u ROBLOX_API_KEY curl --disable --fail-with-body \
+if ! PUBLISH_RESPONSE="$(/usr/bin/env -i \
+    HOME="${HOME}" TMPDIR="${RELEASE_TMPDIR}" PATH=/usr/bin:/bin \
+    LC_ALL=C LANG=C TZ=UTC \
+    /usr/bin/curl --disable --fail-with-body \
     --request POST \
     --header @<(builtin printf 'x-api-key: %s\n' "${RACER_PUBLISH_API_KEY}") \
     --header "Content-Type: application/xml" \
     --data-binary @"${PRIVATE_ARTIFACT}" \
-    "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published")"; then
+    "https://apis.roblox.com/universes/v1/${ROBLOX_UNIVERSE_ID}/places/${PLACE_ID}/versions?versionType=Published" \
+    )"; then
   echo "Roblox publish request failed; ${PENDING_LABEL} was retained for recovery." >&2
   exit 1
 fi
 
-if ! PLACE_VERSION="$(PUBLISH_RESPONSE="${PUBLISH_RESPONSE}" python3 -c 'import json
+if ! PLACE_VERSION="$(/usr/bin/env -i PUBLISH_RESPONSE="${PUBLISH_RESPONSE}" \
+  PATH=/usr/bin:/bin LC_ALL=C LANG=C /usr/bin/python3 -I -c 'import json
 import os
 import sys
 
@@ -388,15 +546,22 @@ print(version)')"; then
 fi
 
 # Persist the accepted PlaceVersion before any tag or other finalization work.
-"${STATE_HELPER}" record-version "${PLACE_VERSION}" \
+state_helper record-version "${PLACE_VERSION}" \
   --git-commit "${GIT_COMMIT}" \
   --artifact-sha256 "${BUILD_SHA256}"
 
-# The finalizer takes the same release lock and is the single tag/lookup/clear path.
-release_publish_lock
-if ! env -u ROBLOX_API_KEY "${FINALIZER}" "${PLACE_VERSION}"; then
-  echo "PlaceVersion ${PLACE_VERSION} was published but ${PENDING_LABEL} remains pending." >&2
-  exit 1
+# Preserve the exact open-file-description across an exec handoff. There is no
+# unlock/reacquire window, and the finalizer returns its exact status or signal.
+unset RACER_PUBLISH_API_KEY PUBLISH_RESPONSE
+if [[ -n "${INSTALL_TEMP}" ]]; then
+  /bin/rm -f "${INSTALL_TEMP}"
+  INSTALL_TEMP=""
 fi
-
-echo "Published Racer Lab place ${PLACE_ID} in universe ${ROBLOX_UNIVERSE_ID}"
+if [[ -n "${TEMP_ROOT}" ]]; then
+  /bin/rm -rf "${TEMP_ROOT}"
+  TEMP_ROOT=""
+fi
+trap - EXIT
+exec /bin/bash -p "${FINALIZER}" "${PLACE_VERSION}"
+echo "Cannot exec the Racer publish finalizer." >&2
+exit 1

@@ -22,9 +22,12 @@ ROJO_STORAGE_RELATIVE = Path(
 
 FAKE_CURL = r'''#!/usr/bin/env python3
 import hashlib
+import errno
+import fcntl
 import json
 import os
 from pathlib import Path
+import stat
 import sys
 
 
@@ -44,10 +47,31 @@ if any(expected in value for value in os.environ.values()):
     fail("API key value reached the curl environment")
 if len(sys.argv) < 2 or sys.argv[1] != "--disable":
     fail("--disable was not curl's first option")
-
-curl_home = os.environ.get("CURL_HOME", "")
-if not curl_home or not (Path(curl_home) / ".curlrc").is_file():
-    fail("test curl configuration was not present")
+if "CURL_HOME" in os.environ or "PYTHONPATH" in os.environ or "BASH_ENV" in os.environ:
+    fail("host startup/configuration environment reached curl")
+try:
+    os.fstat(9)
+except OSError:
+    pass
+else:
+    fail("secret transport FD 9 remained open in curl")
+try:
+    lock_metadata = os.fstat(8)
+except OSError:
+    fail("release lock FD 8 did not reach the critical curl child")
+if not stat.S_ISREG(lock_metadata.st_mode):
+    fail("release lock FD 8 was not a regular file")
+probe = os.open(".git/racer-publish-release.lock", os.O_RDWR)
+try:
+    try:
+        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as error:
+        if error.errno not in (errno.EACCES, errno.EAGAIN):
+            fail(f"independent lock probe failed: {error}")
+    else:
+        fail("critical curl child inherited an unlocked FD 8")
+finally:
+    os.close(probe)
 
 state_path = Path("build/racer-publish-pending.json")
 if not state_path.is_file():
@@ -92,8 +116,10 @@ print('{"versionNumber": 424242}')
 
 FAKE_STATE_HELPER = r'''#!/usr/bin/env python3
 import hashlib
+import fcntl
 import os
 from pathlib import Path
+import stat
 import sys
 
 
@@ -106,6 +132,56 @@ if "ROBLOX_API_KEY" in os.environ or "RACER_PUBLISH_API_KEY" in os.environ:
 if any(expected in value for value in os.environ.values()):
     print("state helper received the credential value", file=sys.stderr)
     raise SystemExit(88)
+
+command = sys.argv[1] if len(sys.argv) > 1 else ""
+secret_handoff = command == "with-release-lock" and "--secret-fd" in sys.argv
+if command == "with-release-lock":
+    try:
+        os.fstat(8)
+    except OSError:
+        pass
+    else:
+        print("acquisition wrapper received a preexisting FD 8", file=sys.stderr)
+        raise SystemExit(88)
+    try:
+        secret_metadata = os.fstat(9)
+    except OSError:
+        secret_open = False
+    else:
+        secret_open = True
+    if secret_open != secret_handoff:
+        print("acquisition wrapper received the wrong FD 9 state", file=sys.stderr)
+        raise SystemExit(88)
+    if secret_open:
+        flags = fcntl.fcntl(9, fcntl.F_GETFL)
+        if not stat.S_ISFIFO(secret_metadata.st_mode) or flags & os.O_ACCMODE != os.O_RDONLY:
+            print("FD 9 was not a read-only pipe", file=sys.stderr)
+            raise SystemExit(88)
+else:
+    try:
+        os.fstat(9)
+    except OSError:
+        pass
+    else:
+        print("secret FD 9 remained open after handoff", file=sys.stderr)
+        raise SystemExit(88)
+    try:
+        lock_metadata = os.fstat(8)
+    except OSError:
+        print("critical state helper did not inherit FD 8", file=sys.stderr)
+        raise SystemExit(88)
+
+Path("build").mkdir(exist_ok=True)
+with Path("build/test-helper-calls.log").open("a") as stream:
+    details = ""
+    if command != "with-release-lock":
+        details = (
+            f" parent={os.getppid()}"
+            f" inode={lock_metadata.st_dev}:{lock_metadata.st_ino}"
+        )
+    stream.write(
+        f"{command} {'secret' if secret_handoff else 'no-secret'}{details}\n"
+    )
 
 real_helper = Path(__file__).with_name("racer-publish-state-real.py")
 os.execv(str(real_helper), [str(real_helper), *sys.argv[1:]])
@@ -151,7 +227,20 @@ def run_publisher(
     repo: Path, environment: dict[str, str], *arguments: str
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", "-a", "-x", str(repo / "scripts/publish-place.sh"), *arguments],
+        [str(repo / "scripts/publish-place.sh"), *arguments],
+        cwd=repo,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def run_hostile_shell_publisher(
+    repo: Path, environment: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["/bin/bash", "-a", "-x", str(repo / "scripts/publish-place.sh")],
         cwd=repo,
         env=environment,
         text=True,
@@ -164,13 +253,7 @@ def run_finalizer(
     repo: Path, environment: dict[str, str], version: str
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [
-            "bash",
-            "-a",
-            "-x",
-            str(repo / "scripts/finalize-studio-publish.sh"),
-            version,
-        ],
+        [str(repo / "scripts/finalize-studio-publish.sh"), version],
         cwd=repo,
         env=environment,
         text=True,
@@ -190,7 +273,8 @@ def require_result(
         raise RuntimeError(f"{label} exposed a credential in its output")
     if result.returncode != expected_code:
         raise RuntimeError(
-            f"{label} returned {result.returncode}, expected {expected_code}"
+            f"{label} returned {result.returncode}, expected {expected_code}: "
+            f"{combined_output}"
         )
 
 
@@ -205,9 +289,14 @@ def main() -> None:
         fake_bin = temp_root / "fake-bin"
         curl_home = temp_root / "curl-home"
         fixture_home = temp_root / "home"
+        attack_python = temp_root / "attack-python"
+        startup_marker = temp_root / "bash-env-ran"
+        python_marker = temp_root / "python-startup-ran"
+        path_python_marker = temp_root / "path-python-ran"
         repo.mkdir()
         fake_bin.mkdir()
         curl_home.mkdir()
+        attack_python.mkdir()
         (curl_home / ".curlrc").write_text(
             "verbose\n"
             "trace-ascii = build/curlrc-trace.txt\n"
@@ -245,6 +334,30 @@ def main() -> None:
         )
         write_executable(state_helper, FAKE_STATE_HELPER)
         write_executable(fake_bin / "curl", FAKE_CURL)
+        write_executable(
+            fake_bin / "python3",
+            "#!/bin/sh\n"
+            f"/usr/bin/touch {path_python_marker}\n"
+            "exec /usr/bin/python3 \"$@\"\n",
+        )
+        bash_env = temp_root / "host-bash-env"
+        bash_env.write_text(f"/usr/bin/touch {startup_marker}\n")
+        (attack_python / "sitecustomize.py").write_text(
+            "from pathlib import Path\n"
+            f"Path({str(python_marker)!r}).write_text('ran')\n"
+        )
+        fake_curl_path = fake_bin / "curl"
+        publisher = repo / "scripts/publish-place.sh"
+        publisher_text = publisher.read_text()
+        expected_curl = "/usr/bin/curl --disable --fail-with-body"
+        if publisher_text.count(expected_curl) != 1:
+            raise RuntimeError("publisher did not contain one absolute curl call")
+        publisher.write_text(
+            publisher_text.replace(
+                expected_curl,
+                f"{fake_curl_path} --disable --fail-with-body",
+            )
+        )
         real_git = shutil.which("git")
         if real_git is None:
             raise RuntimeError("git is required for the publish credential test")
@@ -271,6 +384,8 @@ def main() -> None:
                 "CURL_HOME": str(curl_home),
                 "HOME": str(fixture_home),
                 "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
+                "BASH_ENV": str(bash_env),
+                "PYTHONPATH": str(attack_python),
                 "RACER_PUBLISH_API_KEY": sentinel,
                 "ROBLOX_API_KEY": sentinel,
                 "ROBLOX_RACER_PLACE_ID": "123",
@@ -300,6 +415,40 @@ def main() -> None:
             0,
             sentinel,
         )
+        helper_log = repo / "build/test-helper-calls.log"
+        normal_calls = helper_log.read_text().splitlines()
+        if sum(line == "with-release-lock secret" for line in normal_calls) != 1:
+            raise RuntimeError("normal publish did not acquire once with FD 9")
+        if any(line == "with-release-lock no-secret" for line in normal_calls):
+            raise RuntimeError("publisher-to-finalizer handoff reacquired the release lock")
+        normal_assertions = [
+            line for line in normal_calls if line.startswith("assert-release-lock ")
+        ]
+        if len(normal_assertions) != 2:
+            raise RuntimeError("normal publisher/finalizer did not both assert FD 8")
+        assertion_identity = [line.split(" parent=", 1)[1] for line in normal_assertions]
+        if assertion_identity[0] != assertion_identity[1]:
+            raise RuntimeError("publisher-to-finalizer exec changed PID or lock inode")
+        if any(path.exists() for path in (startup_marker, python_marker, path_python_marker)):
+            raise RuntimeError("host shell/Python/PATH startup code ran during publish")
+        if (repo / "build/curlrc-trace.txt").exists():
+            raise RuntimeError("curl loaded the hostile host configuration")
+
+        hostile_shell_environment = environment.copy()
+        hostile_shell_environment.pop("BASH_ENV")
+        hostile_shell_environment.pop("PYTHONPATH")
+        hostile_shell_result = run_hostile_shell_publisher(
+            repo, hostile_shell_environment
+        )
+        require_result(
+            hostile_shell_result,
+            "bash -a -x publish",
+            0,
+            sentinel,
+        )
+        hostile_shell_calls = helper_log.read_text().splitlines()
+        if sum(line == "with-release-lock secret" for line in hostile_shell_calls) != 2:
+            raise RuntimeError("bash -a -x publish did not use one FD 9 acquisition")
 
         tag_commit = subprocess.check_output(
             ["git", "rev-parse", f"refs/tags/racer-place-v{TEST_VERSION}^{{commit}}"],
@@ -324,6 +473,9 @@ def main() -> None:
         build_only_result = run_publisher(
             repo, build_only_environment, "--build-only"
         )
+        build_only_calls = helper_log.read_text().splitlines()
+        if sum(line == "with-release-lock no-secret" for line in build_only_calls) != 1:
+            raise RuntimeError("build-only did not acquire once without FD 9")
         require_result(
             build_only_result,
             "build-only publish",
@@ -340,6 +492,9 @@ def main() -> None:
         direct_finalize_result = run_finalizer(
             repo, direct_finalize_environment, STUDIO_TEST_VERSION
         )
+        final_calls = helper_log.read_text().splitlines()
+        if sum(line == "with-release-lock no-secret" for line in final_calls) != 2:
+            raise RuntimeError("direct finalizer did not acquire its own release lock")
         require_result(
             direct_finalize_result,
             "direct Studio finalizer",

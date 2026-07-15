@@ -44,7 +44,7 @@ def fail(message: str) -> None:
     raise SystemExit(91)
 
 
-secret = os.environ["EXPECTED_TEST_API_KEY"]
+secret = __EXPECTED_SECRET__
 if any(secret in argument for argument in sys.argv):
     fail("API key reached argv")
 if "ROBLOX_API_KEY" in os.environ:
@@ -86,10 +86,13 @@ for artifact in (private_artifact, installed_artifact):
     if hashlib.sha256(artifact.read_bytes()).hexdigest() != expected_hash:
         fail("POST artifact did not match pending state")
 
-with Path(os.environ["FAKE_CURL_LOG"]).open("a") as stream:
+with Path(__FAKE_CURL_LOG__).open("a") as stream:
     stream.write("call\n")
 
-mode = os.environ["FAKE_CURL_MODE"]
+control = Path(__FAKE_CURL_CONTROL__).read_text().splitlines()
+if len(control) != 2:
+    fail("fake curl control was invalid")
+mode, version = control
 if mode == "network-fail":
     print("simulated connection loss", file=sys.stderr)
     raise SystemExit(7)
@@ -102,7 +105,7 @@ elif mode == "zero":
 elif mode == "missing":
     print('{}')
 elif mode == "success":
-    print(json.dumps({"versionNumber": int(os.environ["FAKE_CURL_VERSION"])}))
+    print(json.dumps({"versionNumber": int(version)}))
 else:
     fail(f"unknown mode {mode}")
 '''
@@ -144,6 +147,7 @@ class Fixture:
         self.fake_bin = self.root / "fake-bin"
         self.build_log = self.root / "build.log"
         self.curl_log = self.root / "curl.log"
+        self.curl_control = self.root / "curl-control"
         self.fixture_home = self.root / "home"
         self.repo.mkdir(parents=True)
         self.fake_bin.mkdir()
@@ -194,20 +198,48 @@ exec "${{SCRIPT_DIR}}/build-racer-release-real.sh" "$@"
             shutil.copy2(self.repo / "scripts/racer-publish-state.py", real_helper)
             write_executable(
                 self.repo / "scripts/racer-publish-state.py",
-                r'''#!/usr/bin/env bash
-set -euo pipefail
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-if [[ "${1:-}" == "create" ]]; then
-  output="$("${SCRIPT_DIR}/racer-publish-state-real.py" "$@")"
-  printf 'changed after manifest creation\n' >> build/racer.rbxlx
-  printf '%s\n' "${output}"
-else
-  exec "${SCRIPT_DIR}/racer-publish-state-real.py" "$@"
-fi
+                r'''#!/usr/bin/python3 -I
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+real = Path(__file__).with_name("racer-publish-state-real.py")
+if len(sys.argv) > 1 and sys.argv[1] == "create":
+    inherited = (8,) if os.path.exists("/dev/fd/8") else ()
+    result = subprocess.run(
+        ["/usr/bin/python3", "-I", str(real), *sys.argv[1:]],
+        check=True,
+        pass_fds=inherited,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    with Path("build/racer.rbxlx").open("a") as stream:
+        stream.write("changed after manifest creation\n")
+    print(result.stdout, end="")
+else:
+    os.execv(str(real), [str(real), *sys.argv[1:]])
 ''',
             )
 
-        write_executable(self.fake_bin / "curl", FAKE_CURL)
+        fake_curl = self.fake_bin / "curl"
+        write_executable(
+            fake_curl,
+            FAKE_CURL.replace("__EXPECTED_SECRET__", repr(API_SENTINEL))
+            .replace("__FAKE_CURL_LOG__", repr(str(self.curl_log)))
+            .replace("__FAKE_CURL_CONTROL__", repr(str(self.curl_control))),
+        )
+        publisher = self.repo / "scripts/publish-place.sh"
+        publisher_text = publisher.read_text()
+        expected_curl = "/usr/bin/curl --disable --fail-with-body"
+        if publisher_text.count(expected_curl) != 1:
+            raise RuntimeError("fixture publisher did not contain one absolute curl call")
+        publisher.write_text(
+            publisher_text.replace(
+                expected_curl,
+                f"{fake_curl} --disable --fail-with-body",
+            )
+        )
 
         git(self.repo, "init", "--quiet")
         git(self.repo, "config", "user.name", "Racer Release Test")
@@ -237,10 +269,6 @@ fi
         environment = os.environ.copy()
         environment.update(
             {
-                "EXPECTED_TEST_API_KEY": API_SENTINEL,
-                "FAKE_CURL_LOG": str(self.curl_log),
-                "FAKE_CURL_MODE": mode,
-                "FAKE_CURL_VERSION": version,
                 "HOME": str(self.fixture_home),
                 "PATH": f"{self.fake_bin}{os.pathsep}{environment['PATH']}",
                 "ROBLOX_API_KEY": API_SENTINEL,
@@ -267,6 +295,7 @@ fi
         )
 
     def publish(self, mode: str = "success", version: str = "700001") -> subprocess.CompletedProcess[str]:
+        self.curl_control.write_text(f"{mode}\n{version}\n")
         return self.run(
             [str(self.repo / "scripts/publish-place.sh")],
             environment=self.environment(mode, version),

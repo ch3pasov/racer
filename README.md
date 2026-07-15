@@ -18,9 +18,14 @@ repositories.
 - `scripts/publish-place.sh` builds and publishes Racer Lab through Roblox Open
   Cloud.
 - `scripts/racer-publish-state.py` preserves the exact artifact and release
-  identity across uncertain publish outcomes.
+  identity across uncertain publish outcomes and owns the persistent release
+  lock protocol.
 - `scripts/test-release-snapshot-build.sh` verifies release-build determinism,
   worktree isolation, dirty-tree refusal, and the Rojo version pin.
+- `scripts/test-release-lock.py` verifies lock contention, crash recovery,
+  inode integrity, spoof refusal, and linked-worktree coordination.
+- `scripts/test-publish-api-key-transport.py` verifies that the Open Cloud key
+  crosses the authenticated self-exec only through its anonymous pipe.
 - `scripts/test-docker-bootstrap.py` verifies that every container command first
   installs the pinned Aftman tools and that Compose uses the supported CPU
   architecture.
@@ -83,6 +88,8 @@ docker compose run --rm roblox bash
 python3 scripts/test-docker-bootstrap.py
 python3 scripts/check-racer-parity.py
 scripts/test-release-snapshot-build.sh
+python3 scripts/test-release-lock.py
+python3 scripts/test-publish-api-key-transport.py
 python3 scripts/test-publish-recovery.py
 scripts/publish-place.sh --build-only
 ```
@@ -143,6 +150,39 @@ For example, `scripts/lookup-place-version.sh 153` shows the commit published as
 Roblox place version 153. Release builds require the repository-pinned Rojo
 7.5.1; a direct `rojo build` remains suitable for development checks but is not
 the traceable release path.
+
+Release publishing and finalization share a nonblocking advisory lock named
+`racer-publish-release.lock` in the repository's resolved Git common directory.
+That location makes every linked worktree coordinate through the same lock and
+the same inode. The empty `0600` regular file is permanent by design: never
+delete, truncate, chmod, replace, symlink, or hard-link it. A crash releases the
+kernel lock automatically; the same inode is reused on the next attempt, so
+there is no stale lock file to remove. The Open Cloud publisher keeps the same
+open lock description while it `exec`s the finalizer, leaving no unlock/relock
+window. Direct Studio finalization and build-only preparation acquire the lock
+independently.
+
+Before the first release with this lock protocol, quiesce every registered
+worktree and verify that no pre-migration publisher or finalizer is running.
+Remove every old `build/.racer-publish-release.lock` path once, across all those
+worktrees. New release commands enumerate registered non-bare worktrees and
+fail closed if any legacy path exists. Do not remove the new common-directory
+lock path during this migration, and never run a pre-migration release script
+from any worktree again: enumeration can detect an existing old path, but it
+cannot prevent an old process from starting later and racing the new protocol.
+
+This lock coordinates only worktrees that share one local Git common directory;
+it cannot coordinate independent clones or different machines. Serialize those
+at the operator/workflow level. A user who owns and can rewrite the Git common
+directory can also alter shared refs or replace lock state, so its filesystem
+ownership remains part of the release trust boundary.
+
+For normal Open Cloud publishing, the exported `ROBLOX_API_KEY` is validated and
+removed before the preliminary clean-tree check. It then crosses the isolated
+publisher self-exec only through anonymous pipe FD 9, is read and closed before
+the locked shell starts child processes, and is supplied to config-disabled
+`/usr/bin/curl` through a descriptor-backed header. Build-only and direct
+finalization never receive that secret pipe.
 
 Every release handoff creates the ignored, non-secret
 `build/racer-publish-pending.json` before Roblox can receive the artifact. While

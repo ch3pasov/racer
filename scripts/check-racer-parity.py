@@ -29,6 +29,8 @@ PUBLISH_STATE_SCRIPT_PATH = ROOT / "scripts/racer-publish-state.py"
 PUBLISH_STATE_SCRIPT = PUBLISH_STATE_SCRIPT_PATH.read_text()
 PUBLISH_RECOVERY_TEST_PATH = ROOT / "scripts/test-publish-recovery.py"
 PUBLISH_RECOVERY_TEST = PUBLISH_RECOVERY_TEST_PATH.read_text()
+RELEASE_LOCK_TEST_PATH = ROOT / "scripts/test-release-lock.py"
+RELEASE_LOCK_TEST = RELEASE_LOCK_TEST_PATH.read_text()
 FINALIZE_SCRIPT_PATH = ROOT / "scripts/finalize-studio-publish.sh"
 FINALIZE_SCRIPT = FINALIZE_SCRIPT_PATH.read_text()
 LOOKUP_SCRIPT = (ROOT / "scripts/lookup-place-version.sh").read_text()
@@ -64,9 +66,13 @@ for token in [
     'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
     'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
     'PENDING_REF="refs/racer-publish/pending"',
-    'RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"',
+    'LOCK_CONTEXT_VALUE="racer-release-lock-v1"',
+    'SECRET_CONTEXT_VALUE="racer-release-secret-v1"',
+    '/usr/bin/python3 -I "${STATE_HELPER}" "${LOCK_ARGUMENTS[@]}"',
+    'RACER_RELEASE_LOCK_CONTEXT="${LOCK_CONTEXT_VALUE}" RACER_RELEASE_LOCK_FD=8',
+    '/usr/bin/python3 -I "${STATE_HELPER}" assert-release-lock',
     "require_pending_ref_absent",
-    '"${STATE_HELPER}" assert-absent',
+    'state_helper assert-absent',
     'PRIVATE_ARTIFACT="${TEMP_ROOT}/racer.rbxlx"',
     'atomic_install_artifact',
     'require_release_state',
@@ -80,12 +86,12 @@ for token in [
     'symbolic-ref -q "${PENDING_REF}"',
     'update-ref --no-deref "${PENDING_REF}" "${GIT_COMMIT}" ""',
     'create_pending_state "open-cloud"',
-    '"${STATE_HELPER}" validate-artifact',
-    "curl --disable --fail-with-body",
+    'state_helper validate-artifact',
+    "/usr/bin/curl --disable --fail-with-body",
     "--header @<(builtin printf 'x-api-key: %s\\n' \"${RACER_PUBLISH_API_KEY}\")",
     '--data-binary @"${PRIVATE_ARTIFACT}"',
-    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
-    '"${FINALIZER}" "${PLACE_VERSION}"',
+    'state_helper record-version "${PLACE_VERSION}"',
+    'exec /bin/bash -p "${FINALIZER}" "${PLACE_VERSION}"',
 ]:
     if token not in PUBLISH_SCRIPT:
         fail(f"Racer publish contract is missing: {token}")
@@ -115,9 +121,13 @@ captured_key_unset_index = PUBLISH_SCRIPT.index(
 crlf_check_index = PUBLISH_SCRIPT.index(
     '"${RACER_PUBLISH_API_KEY}" == *$\'\\r\'*', capture_key_index
 )
-script_dir_index = PUBLISH_SCRIPT.index('SCRIPT_DIR="$(cd --')
-snapshot_build_index = PUBLISH_SCRIPT.index('"${BUILD_HELPER}" \\')
-pending_guard_index = PUBLISH_SCRIPT.index('"${STATE_HELPER}" assert-absent')
+script_dir_index = PUBLISH_SCRIPT.index('SCRIPT_PARENT="$(')
+preflight_index = PUBLISH_SCRIPT.index("EARLY_TREE_STATUS=")
+secret_pipe_index = PUBLISH_SCRIPT.index("exec 9< <(")
+lock_exec_index = PUBLISH_SCRIPT.index('/usr/bin/python3 -I "${STATE_HELPER}" "${LOCK_ARGUMENTS[@]}"')
+lock_assert_index = PUBLISH_SCRIPT.index('assert-release-lock; then', lock_exec_index)
+snapshot_build_index = PUBLISH_SCRIPT.index('/bin/bash -p "${BUILD_HELPER}" \\')
+pending_guard_index = PUBLISH_SCRIPT.index('state_helper assert-absent')
 pending_ref_guard_index = PUBLISH_SCRIPT.index("\nrequire_pending_ref_absent\n")
 install_index = PUBLISH_SCRIPT.index("atomic_install_artifact", snapshot_build_index)
 build_only_index = PUBLISH_SCRIPT.index(
@@ -127,18 +137,18 @@ build_only_exit_index = PUBLISH_SCRIPT.index("exit 0", build_only_index)
 universe_index = PUBLISH_SCRIPT.index(
     ': "${ROBLOX_UNIVERSE_ID:?ROBLOX_UNIVERSE_ID is required}"'
 )
-curl_index = PUBLISH_SCRIPT.index("curl --disable --fail-with-body")
+curl_index = PUBLISH_SCRIPT.index("/usr/bin/curl --disable --fail-with-body")
 studio_pending_index = PUBLISH_SCRIPT.index('create_pending_state "studio"')
 studio_ref_index = PUBLISH_SCRIPT.index("create_pending_ref", build_only_index)
 cloud_pending_index = PUBLISH_SCRIPT.index('create_pending_state "open-cloud"')
 cloud_ref_index = PUBLISH_SCRIPT.index("create_pending_ref", universe_index)
 manifest_recheck_index = PUBLISH_SCRIPT.index(
-    '"${STATE_HELPER}" validate-artifact', cloud_pending_index
+    'state_helper validate-artifact', cloud_pending_index
 )
 record_version_index = PUBLISH_SCRIPT.index(
-    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"'
+    'state_helper record-version "${PLACE_VERSION}"'
 )
-finalizer_index = PUBLISH_SCRIPT.index('"${FINALIZER}" "${PLACE_VERSION}"')
+finalizer_index = PUBLISH_SCRIPT.index('exec /bin/bash -p "${FINALIZER}" "${PLACE_VERSION}"')
 network_recheck_index = PUBLISH_SCRIPT.index(
     "require_release_state", universe_index
 )
@@ -155,6 +165,10 @@ if not (
     < captured_key_unset_index
     < crlf_check_index
     < script_dir_index
+    < preflight_index
+    < secret_pipe_index
+    < lock_exec_index
+    < lock_assert_index
     < pending_ref_guard_index
     < pending_guard_index
     < snapshot_build_index
@@ -198,6 +212,9 @@ for forbidden in [
     'PLACE_IDS_FILE="src/shared/GeneratedPlaceIds.lua"',
     'rojo build "${PROJECT_FILE}"',
     'git_repo tag "${TAG}"',
+    'RELEASE_LOCK_DIR=',
+    'mkdir "${RELEASE_LOCK_DIR}"',
+    'rmdir "${RELEASE_LOCK_DIR}"',
 ]:
     if forbidden in PUBLISH_SCRIPT:
         fail(f"Racer publish contract must not contain: {forbidden}")
@@ -401,9 +418,37 @@ for token in [
     'integer_field(place_ids, "LobbyPlaceId")',
     'integer_field(place_ids, "RacerPlaceId")',
     'STATE_PATH.unlink()',
+    'RELEASE_LOCK_NAME = "racer-publish-release.lock"',
+    'LEGACY_RELEASE_LOCK_PATH = BUILD_DIR / ".racer-publish-release.lock"',
+    'fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)',
+    'os.O_NOFOLLOW | os.O_NONBLOCK',
+    'descriptor_metadata.st_nlink != 1',
+    'descriptor_metadata.st_uid != common_metadata.st_uid',
+    'probe_inherited_release_lock(common_descriptor, common_metadata)',
+    'validate_just_acquired_release_lock()',
+    '"worktree",\n                "list",\n                "--porcelain",\n                "-z"',
+    'only the Git common-directory owner may create the',
+    'close_unexpected_descriptors(secret=secret)',
+    'for directory in ("/dev/fd", "/proc/self/fd")',
+    'os.execve(command[0], command, environment)',
+    'commands.add_parser("with-release-lock")',
+    'commands.add_parser("assert-release-lock")',
 ]:
     if token not in PUBLISH_STATE_SCRIPT:
         fail(f"Pending publish state contract is missing: {token}")
+
+with_lock_body = PUBLISH_STATE_SCRIPT[
+    PUBLISH_STATE_SCRIPT.index("def command_with_release_lock(") :
+    PUBLISH_STATE_SCRIPT.index("def command_assert_release_lock(")
+]
+if "validate_inherited_release_lock()" in with_lock_body:
+    fail("Secret-bearing lock acquisition must not run the fork ownership probe")
+if not (
+    with_lock_body.index("validate_just_acquired_release_lock()")
+    < with_lock_body.index("close_unexpected_descriptors(secret=secret)")
+    < with_lock_body.index("os.execve(command[0], command, environment)")
+):
+    fail("Lock acquisition must validate without fork and close ambient FDs before exec")
 
 if PUBLISH_RECOVERY_TEST_PATH.stat().st_mode & 0o111 == 0:
     fail("Pending publish recovery integration test must be executable")
@@ -434,6 +479,24 @@ for token in [
     if token not in PUBLISH_RECOVERY_TEST:
         fail(f"Pending publish recovery coverage is missing: {token}")
 
+if RELEASE_LOCK_TEST_PATH.stat().st_mode & 0o111 == 0:
+    fail("Release lock integration test must be executable")
+
+for token in [
+    '"second concurrent release"',
+    '"contender while critical child survived"',
+    '"spoofed unlocked correct inode on FD8"',
+    'cases = ("symlink", "hardlink", "mode", "directory", "fifo", "nonempty")',
+    '"legacy build lock path"',
+    'git(repo, "worktree", "add"',
+    '"successful reuse replaced the persistent lock inode"',
+    '"release helper did not preserve the exec child\'s signal"',
+    '"high ambient FD survived a lowered RLIMIT handoff"',
+    '"legacy lock in another linked worktree"',
+]:
+    if token not in RELEASE_LOCK_TEST:
+        fail(f"Release lock dynamic coverage is missing: {token}")
+
 if FINALIZE_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
     fail("Studio publish finalizer must be executable")
 
@@ -460,46 +523,48 @@ for token in [
     'STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"',
     'BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"',
     'PENDING_REF="refs/racer-publish/pending"',
-    'RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"',
+    'LOCK_CONTEXT_VALUE="racer-release-lock-v1"',
+    '/usr/bin/python3 -I "${STATE_HELPER}" with-release-lock --',
+    '/usr/bin/python3 -I "${STATE_HELPER}" assert-release-lock',
     "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
-    '"${STATE_HELPER}" inspect',
-    '"${STATE_HELPER}" validate-artifact',
+    'state_helper inspect',
+    'state_helper validate-artifact',
     'ORIGINAL_ARTIFACT_SHA256="$(sha256_file "${ARTIFACT_FILE}")"',
     'ORIGINAL_ARTIFACT_SIZE="$(file_size "${ARTIFACT_FILE}")"',
     'REBUILT_ARTIFACT="${TEMP_ROOT}/racer-rebuilt.rbxlx"',
     'REBUILT_ARTIFACT_SHA256="$(sha256_file "${REBUILT_ARTIFACT}")"',
     'REBUILT_ARTIFACT_SIZE="$(file_size "${REBUILT_ARTIFACT}")"',
-    'cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"',
+    '/usr/bin/cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"',
     'require_original_artifact_state',
-    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
+    'state_helper record-version "${PLACE_VERSION}"',
     'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     'refs/tags/${TAG}^{commit}',
     'symbolic-ref -q "${PENDING_REF}"',
     'require_pending_ref_state',
     'update-ref --no-deref -d "${PENDING_REF}" "${GIT_COMMIT}"',
     "delete_pending_ref",
-    '"${STATE_HELPER}" clear \\',
+    'state_helper clear \\',
     '--artifact-sha256 "${ARTIFACT_SHA256}"',
 ]:
     if token not in FINALIZE_SCRIPT:
         fail(f"Studio publish finalizer contract is missing: {token}")
 
 manifest_validation_index = FINALIZE_SCRIPT.index(
-    'VALIDATED_SHA256="$("${STATE_HELPER}" validate-artifact)"'
+    'VALIDATED_SHA256="$(state_helper validate-artifact)"'
 )
-rebuild_index = FINALIZE_SCRIPT.index('"${BUILD_HELPER}" \\', manifest_validation_index)
+rebuild_index = FINALIZE_SCRIPT.index('/bin/bash -p "${BUILD_HELPER}" \\', manifest_validation_index)
 rebuilt_sha_index = FINALIZE_SCRIPT.index(
     'REBUILT_ARTIFACT_SHA256="$(sha256_file "${REBUILT_ARTIFACT}")"',
     rebuild_index,
 )
 byte_compare_index = FINALIZE_SCRIPT.index(
-    'cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"', rebuilt_sha_index
+    '/usr/bin/cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"', rebuilt_sha_index
 )
 first_artifact_recheck_index = FINALIZE_SCRIPT.index(
     "require_original_artifact_state", byte_compare_index
 )
 record_version_index = FINALIZE_SCRIPT.index(
-    '"${STATE_HELPER}" record-version "${PLACE_VERSION}"',
+    'state_helper record-version "${PLACE_VERSION}"',
     first_artifact_recheck_index,
 )
 second_artifact_recheck_index = FINALIZE_SCRIPT.index(
@@ -509,7 +574,7 @@ tag_create_index = FINALIZE_SCRIPT.index(
     'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
     second_artifact_recheck_index,
 )
-lookup_index = FINALIZE_SCRIPT.index('LOOKUP_OUTPUT="$("${LOOKUP_SCRIPT}"', tag_create_index)
+lookup_index = FINALIZE_SCRIPT.index('LOOKUP_OUTPUT="$(/bin/bash -p "${LOOKUP_SCRIPT}"', tag_create_index)
 final_ref_recheck_index = FINALIZE_SCRIPT.index(
     "require_pending_ref_state", lookup_index
 )
@@ -517,7 +582,7 @@ delete_ref_call_index = FINALIZE_SCRIPT.index(
     "delete_pending_ref", final_ref_recheck_index
 )
 clear_state_index = FINALIZE_SCRIPT.index(
-    '"${STATE_HELPER}" clear \\', delete_ref_call_index
+    'state_helper clear \\', delete_ref_call_index
 )
 if not (
     manifest_validation_index
@@ -552,6 +617,9 @@ for forbidden in [
     "tag -f",
     'update-ref -d "refs/tags/',
     "--force",
+    "RELEASE_LOCK_DIR=",
+    'mkdir "${RELEASE_LOCK_DIR}"',
+    'rmdir "${RELEASE_LOCK_DIR}"',
 ]:
     if forbidden in FINALIZE_SCRIPT:
         fail(f"Studio publish finalizer must not contain: {forbidden}")
@@ -653,6 +721,12 @@ for token in [
     '"direct Studio finalizer"',
     '"ROBLOX_API_KEY",\n            "RACER_PUBLISH_API_KEY",',
     'str(repo / "scripts/finalize-studio-publish.sh")',
+    '"BASH_ENV": str(bash_env)',
+    '"PYTHONPATH": str(attack_python)',
+    'run_hostile_shell_publisher(',
+    '"publisher-to-finalizer exec changed PID or lock inode"',
+    '"critical curl child inherited an unlocked FD 8"',
+    '"secret transport FD 9 remained open in curl"',
 ]:
     if token not in PUBLISH_SECRET_TEST:
         fail(f"Studio finalizer credential regression coverage is missing: {token}")
@@ -671,6 +745,18 @@ if (
     or 'test -O "${HOME}/.aftman"' not in README
 ):
     fail("README must document tool-volume migration and native-Linux ownership")
+
+for token in [
+    "racer-publish-release.lock",
+    "same inode",
+    "linked worktree",
+    "never run a pre-migration release script",
+    "cannot coordinate independent clones or different machines",
+    "anonymous pipe FD 9",
+    "delete, truncate, chmod, replace, symlink, or hard-link it",
+]:
+    if token not in README:
+        fail(f"README release-lock documentation is missing: {token}")
 
 for token in [
     "operation_id(operation)",

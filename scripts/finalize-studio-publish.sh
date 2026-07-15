@@ -1,24 +1,137 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 set +x
 set +a
 unset ROBLOX_API_KEY RACER_PUBLISH_API_KEY
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-cd "${ROOT_DIR}"
+LOCK_CONTEXT_VALUE="racer-release-lock-v1"
+
+if [[ "$#" -ne 1 ]]; then
+  echo "Usage: scripts/finalize-studio-publish.sh <roblox-place-version>" >&2
+  echo "Verify this PlaceVersion and the embedded commit in Studio before running." >&2
+  exit 2
+fi
+
+PLACE_VERSION="$1"
+if [[ ! "${PLACE_VERSION}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Roblox place version must be a positive decimal integer." >&2
+  exit 2
+fi
+
+if [[ -z "${RACER_RELEASE_LOCK_CONTEXT+x}" && -z "${RACER_RELEASE_LOCK_FD+x}" ]]; then
+  RELEASE_PHASE="initial"
+elif [[ "${RACER_RELEASE_LOCK_CONTEXT-}" == "${LOCK_CONTEXT_VALUE}" \
+  && "${RACER_RELEASE_LOCK_FD-}" == "8" ]]; then
+  RELEASE_PHASE="locked"
+else
+  echo "Racer release lock context is missing, partial, or spoofed." >&2
+  exit 1
+fi
+if [[ -n "${RACER_RELEASE_SECRET_CONTEXT+x}" \
+  || -n "${RACER_RELEASE_SECRET_FD+x}" ]]; then
+  echo "Racer publish finalizer received an unexpected secret context." >&2
+  exit 1
+fi
+if { builtin true <&9; } 2>/dev/null; then
+  exec 9<&-
+  echo "Racer publish finalizer received an unexpected secret FD." >&2
+  exit 1
+fi
+
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+case "${SCRIPT_SOURCE}" in
+  /*) SCRIPT_CANDIDATE="${SCRIPT_SOURCE}" ;;
+  */*) SCRIPT_CANDIDATE="${PWD}/${SCRIPT_SOURCE}" ;;
+  *)
+    echo "Finalizer must be invoked through an explicit path." >&2
+    exit 1
+    ;;
+esac
+SCRIPT_BASENAME="${SCRIPT_CANDIDATE##*/}"
+SCRIPT_PARENT="$(/usr/bin/dirname -- "${SCRIPT_CANDIDATE}")"
+builtin cd -P -- "${SCRIPT_PARENT}"
+SCRIPT_DIR="${PWD}"
+SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_BASENAME}"
+builtin cd -P -- "${SCRIPT_DIR}/.."
+ROOT_DIR="${PWD}"
+if [[ "${SCRIPT_PATH}" != "${ROOT_DIR}/scripts/finalize-studio-publish.sh" \
+  || -L "${SCRIPT_PATH}" || ! -f "${SCRIPT_PATH}" ]]; then
+  echo "Finalizer path is not the trusted repository script." >&2
+  exit 1
+fi
 
 STATE_HELPER="${SCRIPT_DIR}/racer-publish-state.py"
 BUILD_HELPER="${SCRIPT_DIR}/build-racer-release.sh"
 LOOKUP_SCRIPT="${SCRIPT_DIR}/lookup-place-version.sh"
 PENDING_LABEL="build/racer-publish-pending.json"
 PENDING_REF="refs/racer-publish/pending"
-RELEASE_LOCK_DIR="${ROOT_DIR}/build/.racer-publish-release.lock"
-RELEASE_LOCK_HELD="false"
 TEMP_ROOT=""
 
+if [[ -z "${HOME:-}" || "${HOME}" != /* ]]; then
+  echo "Racer releases require an absolute HOME." >&2
+  exit 1
+fi
+RELEASE_TMPDIR="${TMPDIR:-/tmp}"
+if [[ "${RELEASE_TMPDIR}" != /* ]]; then
+  echo "Racer releases require an absolute TMPDIR." >&2
+  exit 1
+fi
+
+if [[ "${RELEASE_PHASE}" == "initial" ]]; then
+  if ! EARLY_TREE_STATUS="$(
+    /usr/bin/env -i \
+      HOME=/ XDG_CONFIG_HOME=/dev/null PATH=/usr/bin:/bin LC_ALL=C LANG=C TZ=UTC \
+      GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+      /usr/bin/git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" \
+      status --porcelain=v1 --untracked-files=all --ignore-submodules=none
+  )"; then
+    echo "Cannot verify the Racer release tree before lock handoff." >&2
+    exit 1
+  fi
+  if [[ -n "${EARLY_TREE_STATUS}" ]]; then
+    echo "Refusing to finalize a Racer publish from a dirty git tree." >&2
+    exit 1
+  fi
+  REEXEC_ENV=(
+    "HOME=${HOME}"
+    "TMPDIR=${RELEASE_TMPDIR}"
+    "PATH=/usr/bin:/bin"
+    "LC_ALL=C"
+    "LANG=C"
+    "TZ=UTC"
+  )
+  for RELEASE_NAME in ROBLOX_LOBBY_PLACE_ID ROBLOX_RACER_PLACE_ID ROBLOX_UNIVERSE_ID; do
+    if [[ -n "${!RELEASE_NAME+x}" ]]; then
+      REEXEC_ENV+=("${RELEASE_NAME}=${!RELEASE_NAME}")
+    fi
+  done
+  exec /usr/bin/env -i "${REEXEC_ENV[@]}" \
+    /usr/bin/python3 -I "${STATE_HELPER}" with-release-lock -- \
+    /bin/bash -p "${SCRIPT_PATH}" "${PLACE_VERSION}"
+  echo "Cannot exec the Racer release-lock helper." >&2
+  exit 1
+fi
+
+if ! /usr/bin/env -i \
+  HOME="${HOME}" TMPDIR="${RELEASE_TMPDIR}" PATH=/usr/bin:/bin \
+  LC_ALL=C LANG=C TZ=UTC \
+  RACER_RELEASE_LOCK_CONTEXT="${LOCK_CONTEXT_VALUE}" RACER_RELEASE_LOCK_FD=8 \
+  /usr/bin/python3 -I "${STATE_HELPER}" assert-release-lock; then
+  exit 1
+fi
+
+state_helper() {
+  /usr/bin/env -i \
+    HOME="${HOME}" TMPDIR="${RELEASE_TMPDIR}" PATH=/usr/bin:/bin \
+    LC_ALL=C LANG=C TZ=UTC \
+    /usr/bin/python3 -I "${STATE_HELPER}" "$@"
+}
+
 git_repo() {
-  git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
+  /usr/bin/env -i \
+    HOME=/ XDG_CONFIG_HOME=/dev/null PATH=/usr/bin:/bin LC_ALL=C LANG=C TZ=UTC \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+    /usr/bin/git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}" "$@"
 }
 
 PENDING_REF_COMMIT=""
@@ -170,7 +283,8 @@ require_clean_tree() {
 }
 
 sha256_file() {
-  TARGET_FILE="$1" python3 -c 'import hashlib
+  /usr/bin/env -i TARGET_FILE="$1" PATH=/usr/bin:/bin LC_ALL=C LANG=C \
+    /usr/bin/python3 -I -c 'import hashlib
 import os
 from pathlib import Path
 
@@ -178,37 +292,18 @@ print(hashlib.sha256(Path(os.environ["TARGET_FILE"]).read_bytes()).hexdigest())'
 }
 
 file_size() {
-  TARGET_FILE="$1" python3 -c 'import os
+  /usr/bin/env -i TARGET_FILE="$1" PATH=/usr/bin:/bin LC_ALL=C LANG=C \
+    /usr/bin/python3 -I -c 'import os
 
 print(os.stat(os.environ["TARGET_FILE"], follow_symlinks=False).st_size)'
 }
 
-release_publish_lock() {
-  if [[ "${RELEASE_LOCK_HELD}" == "true" ]]; then
-    rmdir "${RELEASE_LOCK_DIR}"
-    RELEASE_LOCK_HELD="false"
-  fi
-}
-
 cleanup() {
   if [[ -n "${TEMP_ROOT}" ]]; then
-    rm -rf "${TEMP_ROOT}"
+    /bin/rm -rf "${TEMP_ROOT}"
   fi
-  release_publish_lock
 }
 trap cleanup EXIT
-
-if [[ "$#" -ne 1 ]]; then
-  echo "Usage: scripts/finalize-studio-publish.sh <roblox-place-version>" >&2
-  echo "Verify this PlaceVersion and the embedded commit in Studio before running." >&2
-  exit 2
-fi
-
-PLACE_VERSION="$1"
-if [[ ! "${PLACE_VERSION}" =~ ^[1-9][0-9]*$ ]]; then
-  echo "Roblox place version must be a positive decimal integer." >&2
-  exit 2
-fi
 
 : "${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}"
 PLACE_ID="${ROBLOX_RACER_PLACE_ID}"
@@ -238,18 +333,10 @@ if [[ ! -x "${LOOKUP_SCRIPT}" ]]; then
   exit 1
 fi
 
-mkdir -p "$(dirname -- "${RELEASE_LOCK_DIR}")"
-if ! mkdir "${RELEASE_LOCK_DIR}"; then
-  echo "Another Racer release operation holds ${RELEASE_LOCK_DIR#"${ROOT_DIR}/"}." >&2
-  echo "If no release process is running, inspect pending state before removing a stale lock." >&2
-  exit 1
-fi
-RELEASE_LOCK_HELD="true"
-
 MANIFEST_FIELDS=()
 while IFS= read -r field; do
   MANIFEST_FIELDS+=("${field}")
-done < <("${STATE_HELPER}" inspect)
+done < <(state_helper inspect)
 if [[ "${#MANIFEST_FIELDS[@]}" -ne 12 ]]; then
   echo "Pending publish state did not return its complete validated identity." >&2
   exit 1
@@ -316,7 +403,7 @@ if [[ "${RESOLVED_COMMIT}" != "${GIT_COMMIT}" ]]; then
   exit 1
 fi
 
-VALIDATED_SHA256="$("${STATE_HELPER}" validate-artifact)"
+VALIDATED_SHA256="$(state_helper validate-artifact)"
 if [[ "${VALIDATED_SHA256}" != "${ARTIFACT_SHA256}" ]]; then
   echo "Validated Racer artifact SHA-256 changed unexpectedly." >&2
   exit 1
@@ -338,9 +425,9 @@ if [[ "${ORIGINAL_ARTIFACT_SIZE}" != "${ARTIFACT_SIZE}" ]]; then
   exit 1
 fi
 
-TEMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/racer-finalize.XXXXXX")"
+TEMP_ROOT="$(/usr/bin/mktemp -d "${RELEASE_TMPDIR}/racer-finalize.XXXXXX")"
 REBUILT_ARTIFACT="${TEMP_ROOT}/racer-rebuilt.rbxlx"
-"${BUILD_HELPER}" \
+/bin/bash -p "${BUILD_HELPER}" \
   "${GIT_COMMIT}" \
   "${PUBLISHED_AT}" \
   "${LOBBY_PLACE_ID}" \
@@ -357,7 +444,7 @@ if [[ "${REBUILT_ARTIFACT_SIZE}" != "${ARTIFACT_SIZE}" ]]; then
   echo "Rebuilt Racer artifact size does not match the pending manifest." >&2
   exit 1
 fi
-if ! cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"; then
+if ! /usr/bin/cmp -s "${ARTIFACT_FILE}" "${REBUILT_ARTIFACT}"; then
   echo "Racer release artifact is not the exact reproducible build of its pending commit." >&2
   exit 1
 fi
@@ -386,7 +473,7 @@ require_original_artifact_state
 require_pending_ref_state
 
 # Record a manually verified or recovered version before touching its git tag.
-"${STATE_HELPER}" record-version "${PLACE_VERSION}" \
+state_helper record-version "${PLACE_VERSION}" \
   --git-commit "${GIT_COMMIT}" \
   --artifact-sha256 "${ARTIFACT_SHA256}"
 RECORDED_PLACE_VERSION="${PLACE_VERSION}"
@@ -416,7 +503,7 @@ if [[ "${TAG_COMMIT}" != "${GIT_COMMIT}" ]]; then
   exit 1
 fi
 
-if ! LOOKUP_OUTPUT="$("${LOOKUP_SCRIPT}" "${PLACE_VERSION}")"; then
+if ! LOOKUP_OUTPUT="$(/bin/bash -p "${LOOKUP_SCRIPT}" "${PLACE_VERSION}")"; then
   echo "PlaceVersion lookup failed; ${PENDING_LABEL} was retained." >&2
   exit 1
 fi
@@ -437,7 +524,7 @@ if [[ "$(git_repo rev-parse HEAD)" != "${STARTING_HEAD}" ]]; then
   exit 1
 fi
 require_clean_tree
-if [[ "$("${STATE_HELPER}" validate-artifact)" != "${ARTIFACT_SHA256}" ]]; then
+if [[ "$(state_helper validate-artifact)" != "${ARTIFACT_SHA256}" ]]; then
   echo "Racer release artifact changed before pending state could be cleared." >&2
   exit 1
 fi
@@ -451,7 +538,7 @@ require_pending_ref_state
 # recovery ref, then clear its manifest. A retry can resume between these steps.
 delete_pending_ref
 
-"${STATE_HELPER}" clear \
+state_helper clear \
   --git-commit "${GIT_COMMIT}" \
   --artifact-sha256 "${ARTIFACT_SHA256}" \
   --place-version "${PLACE_VERSION}"
