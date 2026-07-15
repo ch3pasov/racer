@@ -1463,10 +1463,18 @@ for lap_source in [CLIENT, SERVER]:
 
 for token in [
     "local DEFAULT_FAST_LAP_TIME = 180",
+    "local MAX_PERSISTENT_FAST_LAP_MS = 60 * 60 * 1000",
+    "local FAST_LAP_SAVE_ATTEMPTS = 2",
     "local playerScreenProfiles = {}",
+    "local playerScreenFastLapStore = nil",
     "local function playerScreenProfile(player: Player, screenId: string)",
     "fastLapTime = DEFAULT_FAST_LAP_TIME",
+    'fastLapLoadState = "idle"',
     "local function hydrateSessionPlayerState(session, player: Player)",
+    "local function persistentFastLapKey(screenId: string, userId: number): string",
+    'DataStoreService:GetDataStore("RacerPlayerScreenFastLapMsV1")',
+    "local function startPersistentFastLapLoad(session, player: Player)",
+    "local function savePersistentFastLap(session, player: Player, lapTime: number)",
     "local function rememberSessionFastLap(session)",
     "local function clearSessionPlayerState(session)",
     "playerScreenProfiles[player] = nil",
@@ -1484,10 +1492,130 @@ if SERVER.count("clearSessionPlayerState(session)") != 3:
 require(
     r"local function enterScreen\(player: Player, screenId: string\).*?"
     r"hydrateSessionPlayerState\(session, player\)\s*session\.activePlayer = player\s*"
-    r"resetRun\(session\)",
+    r"resetRun\(session\)\s*startPersistentFastLapLoad\(session, player\)",
     SERVER,
-    "Racer entry must hydrate the new player's screen state before resetting the run",
+    "Racer entry must hydrate and activate the player before starting a background fastest-lap load",
 )
+
+if SERVER.count('DataStoreService:GetDataStore("RacerPlayerScreenFastLapMsV1")') != 1:
+    fail("v4-v6 persistent fastest laps must use exactly one dedicated DataStore")
+
+persistent_key_match = re.search(
+    r"local function persistentFastLapKey\(screenId: string, userId: number\): string(.*?)\nend",
+    SERVER,
+    re.DOTALL,
+)
+if not persistent_key_match or persistent_key_match.group(1).strip() != "return `{screenId}:{userId}`":
+    fail("persistent fastest-lap keys must isolate the player and Racer screen")
+
+persistent_source_match = re.search(
+    r"local function persistentFastLapSource\(session, userId: number\)(.*?)"
+    r"\nend\n\nlocal function startPersistentFastLapLoad",
+    SERVER,
+    re.DOTALL,
+)
+if not persistent_source_match:
+    fail("persistent fastest-lap source routing could not be isolated")
+persistent_source_body = persistent_source_match.group(1)
+for required in [
+    "if not RacerConfig.isFinalLike(mode) then",
+    "return nil, nil",
+    "if RacerConfig.hasRecordBoards(mode) then",
+    "return v7RecordGlobalStore(), tostring(userId)",
+    "return persistentPlayerScreenFastLapStore(), persistentFastLapKey(",
+]:
+    if required not in persistent_source_body:
+        fail(f"persistent fastest-lap source routing is missing: {required}")
+
+load_match = re.search(
+    r"local function startPersistentFastLapLoad\(session, player: Player\)(.*?)"
+    r"\nend\n\nlocal function savePersistentFastLap",
+    SERVER,
+    re.DOTALL,
+)
+save_match = re.search(
+    r"local function savePersistentFastLap\(session, player: Player, lapTime: number\)(.*?)"
+    r"\nend\n\nlocal function rememberSessionFastLap",
+    SERVER,
+    re.DOTALL,
+)
+remember_fast_match = re.search(
+    r"local function rememberSessionFastLap\(session\)(.*?)"
+    r"\nend\n\nlocal function v7RecordPersonalStore",
+    SERVER,
+    re.DOTALL,
+)
+if not load_match or not save_match or not remember_fast_match:
+    fail("persistent fastest-lap load/save functions could not be isolated")
+load_body = load_match.group(1)
+save_body = save_match.group(1)
+remember_fast_body = remember_fast_match.group(1)
+
+for required in [
+    'profile.fastLapLoadState = "loading"',
+    "task.spawn(function()",
+    "pcall(function()",
+    "store:GetAsync(key)",
+    "playerScreenProfiles[player] ~= playerProfiles",
+    "playerProfiles[screenId] ~= profile",
+    'profile.fastLapLoadState = "idle"',
+    'profile.fastLapLoadState = "loaded"',
+    "profile.fastLapTime = math.min(profile.fastLapTime, storedMs / 1000)",
+    "if session.activePlayer == player then",
+    "session.fastLapTime = math.min(session.fastLapTime, profile.fastLapTime)",
+    "session.values.FastLapTime.Value = session.fastLapTime",
+]:
+    if required not in load_body:
+        fail(f"background fastest-lap load is missing: {required}")
+for forbidden in ["resetRun(", "recordLapForRecordBoards(", "refreshRecordLeaderboards(", "actionEvent"]:
+    if forbidden in load_body:
+        fail(f"background fastest-lap load must not mutate run or board lifecycle: {forbidden}")
+
+for required in [
+    "if not RacerConfig.isFinalLike(mode) or RacerConfig.hasRecordBoards(mode) then",
+    "task.spawn(function()",
+    "for attempt = 1, FAST_LAP_SAVE_ATTEMPTS do",
+    "pcall(function()",
+    "persistentPlayerScreenFastLapStore():UpdateAsync(key, function(oldValue)",
+    "if oldLapMs and oldLapMs <= lapMs then",
+    "task.wait(FAST_LAP_SAVE_RETRY_SECONDS)",
+]:
+    if required not in save_body:
+        fail(f"background fastest-lap save is missing: {required}")
+if "SetAsync(" in save_body:
+    fail("persistent fastest laps must use conflict-safe UpdateAsync, not SetAsync")
+if not (
+    remember_fast_body.index("profile.fastLapTime = math.min(")
+    < remember_fast_body.index("savePersistentFastLap(session, player, profile.fastLapTime)")
+):
+    fail("a fastest lap must update the in-memory player profile before background persistence")
+
+enter_match = re.search(
+    r"local function enterScreen\(player: Player, screenId: string\)(.*?)\nend\n\nlocal function createCabinet",
+    SERVER,
+    re.DOTALL,
+)
+update_racer_match = re.search(
+    r"local function updateRacer\(session, dt: number\)(.*?)\nend\n\nlocal function settingValue",
+    SERVER,
+    re.DOTALL,
+)
+hydrate_match = re.search(
+    r"local function hydrateSessionPlayerState\(session, player: Player\)(.*?)"
+    r"\nend\n\nlocal function rememberSessionSetting",
+    SERVER,
+    re.DOTALL,
+)
+if not enter_match or not update_racer_match or not hydrate_match:
+    fail("non-yielding Racer gameplay functions could not be isolated")
+for function_name, body in [
+    ("enterScreen", enter_match.group(1)),
+    ("updateRacer", update_racer_match.group(1)),
+    ("hydrateSessionPlayerState", hydrate_match.group(1)),
+]:
+    for forbidden in ["GetAsync(", "UpdateAsync(", "task.wait("]:
+        if forbidden in body:
+            fail(f"{function_name} must not synchronously wait for persistent fastest laps: {forbidden}")
 
 exit_screen_match = re.search(
     r"local function exitScreen\(player: Player, message: string\?\)(.*?)\nend\n\nlocal function rejoinPlace",

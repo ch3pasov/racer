@@ -157,6 +157,9 @@ local RACER_PLACE_ID = if GeneratedPlaceIds.RacerPlaceId
 local MAX_ACCUMULATED_TIME = 1
 local MAX_STEPS_PER_HEARTBEAT = 8
 local DEFAULT_FAST_LAP_TIME = 180
+local MAX_PERSISTENT_FAST_LAP_MS = 60 * 60 * 1000
+local FAST_LAP_SAVE_ATTEMPTS = 2
+local FAST_LAP_SAVE_RETRY_SECONDS = 1
 
 local SETTING_DEFAULTS = {
 	RoadWidth = { min = 500, max = 3000, step = 100, default = 2000 },
@@ -179,6 +182,7 @@ local perfLines = {}
 local recordLeaderboardLabels = {}
 local recordGlobalStore = nil
 local recordPersonalStore = nil
+local playerScreenFastLapStore = nil
 local recordUiEpoch = 0
 local V7_FRIENDS_BOARD_TITLE = "v7 Friends in Global Top 100"
 
@@ -200,6 +204,7 @@ local function playerScreenProfile(player: Player, screenId: string)
 	if not profile then
 		profile = {
 			fastLapTime = DEFAULT_FAST_LAP_TIME,
+			fastLapLoadState = "idle",
 			settings = defaultPlayerSettings(),
 		}
 		profiles[screenId] = profile
@@ -215,13 +220,6 @@ local function hydrateSessionPlayerState(session, player: Player)
 		if valueObject then
 			valueObject.Value = value
 		end
-	end
-end
-
-local function rememberSessionFastLap(session)
-	local player = session.activePlayer
-	if player then
-		playerScreenProfile(player, session.definition.Id).fastLapTime = session.fastLapTime
 	end
 end
 
@@ -244,6 +242,132 @@ local function v7RecordGlobalStore()
 		recordGlobalStore = DataStoreService:GetOrderedDataStore("RacerV7GlobalLapMsV1")
 	end
 	return recordGlobalStore
+end
+
+local function persistentPlayerScreenFastLapStore()
+	if not playerScreenFastLapStore then
+		playerScreenFastLapStore = DataStoreService:GetDataStore("RacerPlayerScreenFastLapMsV1")
+	end
+	return playerScreenFastLapStore
+end
+
+local function persistentFastLapKey(screenId: string, userId: number): string
+	return `{screenId}:{userId}`
+end
+
+local function validPersistentFastLapMs(value): number?
+	if
+		typeof(value) ~= "number"
+		or value ~= value
+		or value ~= math.floor(value)
+		or value <= 0
+		or value > MAX_PERSISTENT_FAST_LAP_MS
+	then
+		return nil
+	end
+	return value
+end
+
+local function fastLapMilliseconds(lapTime: number): number
+	return math.floor(lapTime * 1000 + 0.5)
+end
+
+local function persistentFastLapSource(session, userId: number)
+	local mode = session.definition.Mode
+	if not RacerConfig.isFinalLike(mode) then
+		return nil, nil
+	end
+	if RacerConfig.hasRecordBoards(mode) then
+		return v7RecordGlobalStore(), tostring(userId)
+	end
+	return persistentPlayerScreenFastLapStore(), persistentFastLapKey(session.definition.Id, userId)
+end
+
+local function startPersistentFastLapLoad(session, player: Player)
+	if not RacerConfig.isFinalLike(session.definition.Mode) then
+		return
+	end
+	local screenId = session.definition.Id
+	local profile = playerScreenProfile(player, screenId)
+	if profile.fastLapLoadState ~= "idle" then
+		return
+	end
+	profile.fastLapLoadState = "loading"
+	local userId = player.UserId
+	local playerProfiles = playerScreenProfiles[player]
+	task.spawn(function()
+		local ok, storedValue = pcall(function()
+			local store, key = persistentFastLapSource(session, userId)
+			if not store or not key then
+				return nil
+			end
+			return store:GetAsync(key)
+		end)
+		if
+			playerScreenProfiles[player] ~= playerProfiles
+			or playerProfiles[screenId] ~= profile
+		then
+			return
+		end
+		if not ok then
+			profile.fastLapLoadState = "idle"
+			warn(`[RacerLab] fastest lap load failed for {screenId}:{userId}: {storedValue}`)
+			return
+		end
+		profile.fastLapLoadState = "loaded"
+		local storedMs = validPersistentFastLapMs(storedValue)
+		if not storedMs then
+			return
+		end
+		profile.fastLapTime = math.min(profile.fastLapTime, storedMs / 1000)
+		if session.activePlayer == player then
+			session.fastLapTime = math.min(session.fastLapTime, profile.fastLapTime)
+			session.values.FastLapTime.Value = session.fastLapTime
+		end
+	end)
+end
+
+local function savePersistentFastLap(session, player: Player, lapTime: number)
+	local mode = session.definition.Mode
+	if not RacerConfig.isFinalLike(mode) or RacerConfig.hasRecordBoards(mode) then
+		return
+	end
+	local screenId = session.definition.Id
+	local userId = player.UserId
+	local key = persistentFastLapKey(screenId, userId)
+	local lapMs = fastLapMilliseconds(lapTime)
+	task.spawn(function()
+		local lastError = nil
+		for attempt = 1, FAST_LAP_SAVE_ATTEMPTS do
+			local ok, saveError = pcall(function()
+				persistentPlayerScreenFastLapStore():UpdateAsync(key, function(oldValue)
+					local oldLapMs = validPersistentFastLapMs(oldValue)
+					if oldLapMs and oldLapMs <= lapMs then
+						return oldLapMs
+					end
+					return lapMs
+				end)
+			end)
+			if ok then
+				return
+			end
+			lastError = saveError
+			if attempt < FAST_LAP_SAVE_ATTEMPTS then
+				task.wait(FAST_LAP_SAVE_RETRY_SECONDS)
+			end
+		end
+		warn(`[RacerLab] fastest lap save failed for {screenId}:{userId}: {lastError}`)
+	end)
+end
+
+local function rememberSessionFastLap(session)
+	local player = session.activePlayer
+	if not player then
+		return
+	end
+	local profile = playerScreenProfile(player, session.definition.Id)
+	profile.fastLapTime = math.min(profile.fastLapTime, session.fastLapTime)
+	savePersistentFastLap(session, player, profile.fastLapTime)
 end
 
 local function v7RecordPersonalStore()
@@ -714,7 +838,7 @@ local function recordLapForRecordBoards(session, player: Player, lapTime: number
 	if v7ActivePlayer() ~= player then
 		return
 	end
-	local lapMs = math.floor(lapTime * 1000 + 0.5)
+	local lapMs = fastLapMilliseconds(lapTime)
 	local saveEpoch = beginV7RecordUiRequest()
 	setRecordLeaderboardText("self", `v7 Your Top 10\nSaving {formatLapTime(lapTime)}...`)
 	task.spawn(function()
@@ -821,6 +945,7 @@ local function enterScreen(player: Player, screenId: string)
 	hydrateSessionPlayerState(session, player)
 	session.activePlayer = player
 	resetRun(session)
+	startPersistentFastLapLoad(session, player)
 	setCharacterLocked(player, true)
 	player:SetAttribute("Activity", "RacerScreen")
 	player:SetAttribute("RacerMode", session.definition.Name)
