@@ -15,6 +15,8 @@ repositories.
 - `scripts/check-racer-parity.py` runs static parity checks for the racer model.
 - `scripts/publish-place.sh` builds and publishes Racer Lab through Roblox Open
   Cloud.
+- `scripts/finalize-studio-publish.sh` safely records the immutable git mapping
+  after a manually verified Roblox Studio publish.
 - `scripts/lookup-place-version.sh` maps a Roblox place version back to the git
   commit tagged during publish.
 - `scripts/read-roblox-server-logs.py` reads live server logs through Roblox
@@ -76,3 +78,18 @@ the source commit in `ReplicatedStorage.Shared.GeneratedBuildInfo`, and the
 publish script tags successful Roblox versions as `racer-place-v<version>`.
 For example, `scripts/lookup-place-version.sh 153` shows the commit published as
 Roblox place version 153.
+
+## Finalizing a Studio Publish
+
+Before recording a Studio publish, reopen the published Racer place in Studio
+and verify its `game.PlaceId`, `game.PlaceVersion`, and embedded
+`GeneratedBuildInfo.GitCommit`. Then record that exact version from a clean tree:
+
+```sh
+export ROBLOX_RACER_PLACE_ID="..."
+scripts/finalize-studio-publish.sh <verified-place-version>
+```
+
+The finalizer performs no network operation and never moves an existing release
+tag. It validates that `build/racer.rbxlx` embeds the current commit and the
+expected Racer place before atomically creating the version tag.

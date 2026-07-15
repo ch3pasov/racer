@@ -18,6 +18,8 @@ SERVER = (ROOT / "src/racer/server/Main.server.lua").read_text()
 MATH = (ROOT / "src/racer/shared/RacerMath.lua").read_text()
 TEXTURES = (ROOT / "src/racer/shared/RacerTextures.lua").read_text()
 PUBLISH_SCRIPT = (ROOT / "scripts/publish-place.sh").read_text()
+FINALIZE_SCRIPT_PATH = ROOT / "scripts/finalize-studio-publish.sh"
+FINALIZE_SCRIPT = FINALIZE_SCRIPT_PATH.read_text()
 LOOKUP_SCRIPT = (ROOT / "scripts/lookup-place-version.sh").read_text()
 DOCKERFILE = (ROOT / "Dockerfile").read_text()
 UPLOAD_SCRIPT = (ROOT / "scripts/upload-racer-textures.py").read_text()
@@ -45,6 +47,41 @@ for token in [
 for forbidden in ["ROBLOX_PLACE_ID", "git_repo tag -f", "git tag -f"]:
     if forbidden in PUBLISH_SCRIPT:
         fail(f"Racer publish contract must not contain: {forbidden}")
+
+if FINALIZE_SCRIPT_PATH.stat().st_mode & 0o111 == 0:
+    fail("Studio publish finalizer must be executable")
+
+for token in [
+    '${ROBLOX_RACER_PLACE_ID:?ROBLOX_RACER_PLACE_ID is required}',
+    'BUILD_FILE="build/racer.rbxlx"',
+    "status --porcelain=v1 --untracked-files=all --ignore-submodules=none",
+    'module_source("GeneratedBuildInfo")',
+    'module_source("GeneratedPlaceIds")',
+    'string_field(build_info, "GitCommit")',
+    'string_field(build_info, "GitCommitShort")',
+    'string_field(build_info, "PublishedAt")',
+    'integer_field(place_ids, "RacerPlaceId")',
+    'update-ref "refs/tags/${TAG}" "${GIT_COMMIT}" ""',
+    'refs/tags/${TAG}^{commit}',
+    'lookup-place-version.sh" "${PLACE_VERSION}"',
+]:
+    if token not in FINALIZE_SCRIPT:
+        fail(f"Studio publish finalizer contract is missing: {token}")
+
+if FINALIZE_SCRIPT.count("require_clean_tree") < 3:
+    fail("Studio publish finalizer must check cleanliness before and after validation")
+
+for forbidden in [
+    "ROBLOX_API_KEY",
+    "curl ",
+    "git_repo tag ",
+    "git tag ",
+    "tag -f",
+    "update-ref -d",
+    "--force",
+]:
+    if forbidden in FINALIZE_SCRIPT:
+        fail(f"Studio publish finalizer must not contain: {forbidden}")
 
 if 'git -c safe.directory="${ROOT_DIR}" -C "${ROOT_DIR}"' not in LOOKUP_SCRIPT:
     fail("PlaceVersion lookup must support the release container's mounted git repository")
