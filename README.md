@@ -1,12 +1,48 @@
 # Racer Lab
 
-Code-first Roblox place for the `Racer Lab` pseudo-3D racing prototype.
+A Roblox/Luau port of [Jake Gordon's Javascript Racer](https://github.com/jakesgordon/javascript-racer), presented as a walkable lab containing every stage of the original tutorial and three extensions.
+
+![Racer gameplay inside Roblox](docs/images/racer-gameplay.png)
+
+The first four screens preserve the original progression from a straight road to the complete pseudo-3D racer. The next three continue the same implementation with Roblox-specific controls, player presentation, and persistent records.
+
+![Seven Racer Lab screens in the Roblox world](docs/images/racer-lab.png)
+
+## Versions
+
+| Screen | Lineage | Contents |
+|---|---|---|
+| `v1 Straight` | Upstream parity | Straight-road projection and driving |
+| `v2 Curves` | Upstream parity | Curved road segments |
+| `v3 Hills` | Upstream parity | Elevation and hills |
+| `v4 Final` | Upstream parity | Traffic, roadside sprites, collisions, and lap timing |
+| `v5 Mobile Controls` | Roblox extension | Touch controls and a mobile fullscreen layout |
+| `v6 Driver Occupants` | Roblox extension | Driver and passenger presentation inside the player car |
+| `v7 Record Boards` | Roblox extension | Personal, friends, and global fastest-lap boards |
+
+## What the port adds
+
+- Translates the browser canvas projection and simulation into Luau and Roblox UI objects.
+- Places every version on a physical screen that players can enter or watch from the lab.
+- Keeps active-player and spectator rendering synchronized through client/server state.
+- Adds keyboard and touch input, DataStore-backed lap records, live boards, and debug overlays.
+- Replaces the upstream media with project-specific texture atlases and a deterministic player-car art pipeline.
+- Maps each published Roblox `PlaceVersion` back to the exact git commit and release artifact that produced it.
+
+## Origin and licensing
+
+The original source code is MIT-licensed, so the Roblox/Luau port and its code additions are also published under MIT with Jake Gordon's copyright notice preserved. The upstream media is a separate matter: its README says that the music was licensed only for the original project and that the placeholder sprites came from the Genesis version of OutRun.
+
+This repository includes neither the upstream music nor the upstream sprite files. All graphics in this repository were created for Racer Lab and are released under the same MIT License.
+
+- Source code, documentation, and project graphics: [MIT](LICENSE).
+- Detailed provenance and upstream notices: [THIRD_PARTY.md](THIRD_PARTY.md).
 
 This repository intentionally contains only the Racer Lab place. Lobby work,
 archived proofs of concept, and other Roblox places should live in separate
 repositories.
 
-## Layout
+## Repository layout
 
 - `racer.project.json` maps the Racer Lab place for Rojo.
 - `src/racer` contains Racer Lab scripts.
