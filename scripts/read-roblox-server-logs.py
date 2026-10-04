@@ -104,7 +104,10 @@ def request_json(path: str, params: dict[str, Any], api_key: str) -> dict[str, A
                 time.sleep(min(2**attempt, 16))
                 continue
             raise RobloxLogsError(api_error_message(error.code, body)) from error
-        except urllib.error.URLError as error:
+        except (urllib.error.URLError, TimeoutError) as error:
+            # A socket timeout while opening or reading the response can escape
+            # urllib without being wrapped in URLError. These GETs are safe to
+            # retry using the same bounded policy as other transport failures.
             if attempt < DEFAULT_MAX_RETRIES:
                 time.sleep(min(2**attempt, 16))
                 continue

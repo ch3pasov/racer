@@ -71,6 +71,8 @@ repositories.
   commit tagged during publish.
 - `scripts/read-roblox-server-logs.py` reads live server logs through Roblox
   Open Cloud Server Management.
+- `scripts/test-server-log-reader.py` verifies bounded transport retries without
+  connecting to Roblox or reading an API key.
 
 ## Required Secrets For Publishing
 
@@ -105,6 +107,15 @@ scripts/read-roblox-server-logs.py --warnings-and-errors --pretty
 
 The key must have read access to the target universe and Server Management read
 operations, including listing game servers and listing game server logs.
+
+The reader retries transient transport failures, including connection and
+response-read timeouts, up to four times with bounded backoff. If they persist,
+it reports a controlled error. Verify this behavior locally without credentials
+or network access:
+
+```sh
+python3 -B scripts/test-server-log-reader.py
+```
 
 ## Bootstrap Limitation
 
