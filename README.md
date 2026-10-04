@@ -74,6 +74,22 @@ repositories.
 - `scripts/test-server-log-reader.py` verifies bounded transport retries without
   connecting to Roblox or reading an API key.
 
+## Automated Offline Checks
+
+Pull requests and pushes to `main` run the log-reader regression tests,
+container-bootstrap tests with synthetic tools, and static Racer parity checks.
+The same workflow can be started manually. It uses Python's standard library,
+requires no Roblox credentials, and does not publish a place or start Docker.
+
+```sh
+python3 -B scripts/test-server-log-reader.py
+python3 -B scripts/test-docker-bootstrap.py
+python3 -B scripts/check-racer-parity.py
+```
+
+These checks do not replace gameplay validation in Roblox Studio or the separate
+release-build, lock and publish-recovery suites documented below.
+
 ## Required Secrets For Publishing
 
 Do not commit secrets. Non-secret ids can live in your shell or a local `.env`
