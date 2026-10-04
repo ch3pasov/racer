@@ -99,7 +99,14 @@ def request_json(path: str, params: dict[str, Any], api_key: str) -> dict[str, A
                 data = response.read().decode("utf-8")
                 return json.loads(data) if data else {}
         except urllib.error.HTTPError as error:
-            body = error.read().decode("utf-8", errors="replace")
+            try:
+                body = error.read().decode("utf-8", errors="replace")
+            except TimeoutError:
+                # The status is already known; retain its retry/error policy
+                # even if reading optional diagnostic text times out.
+                body = "Timed out while reading the error response body."
+            finally:
+                error.close()
             if error.code == 429 and attempt < DEFAULT_MAX_RETRIES:
                 time.sleep(min(2**attempt, 16))
                 continue

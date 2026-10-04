@@ -83,6 +83,43 @@ class LogReaderTransportTests(unittest.TestCase):
         self.assertEqual(self.open.call_count, 1)
         self.sleep.assert_not_called()
 
+    def test_rate_limit_error_body_timeout_recovers_and_closes_response(self):
+        body = ReadTimeout()
+        self.open.side_effect = [
+            urllib.error.HTTPError("https://example.invalid", 429, "limited", {}, body),
+            io.BytesIO(b'{}'),
+        ]
+        self.assertEqual(self.request(), {})
+        self.assertTrue(body.closed)
+        self.assertEqual(self.open.call_count, 2)
+        self.sleep.assert_called_once_with(1)
+
+    def test_repeated_rate_limit_body_timeouts_keep_bounded_status_error(self):
+        bodies = [ReadTimeout() for _ in range(reader.DEFAULT_MAX_RETRIES + 1)]
+        self.open.side_effect = [
+            urllib.error.HTTPError("https://example.invalid", 429, "limited", {}, body)
+            for body in bodies
+        ]
+        with self.assertRaisesRegex(reader.RobloxLogsError, "HTTP 429: Timed out"):
+            self.request()
+        self.assertEqual(self.open.call_count, reader.DEFAULT_MAX_RETRIES + 1)
+        self.assertEqual([call.args[0] for call in self.sleep.call_args_list], [1, 2, 4, 8])
+        self.assertTrue(all(body.closed for body in bodies))
+
+    def test_nonretryable_http_status_survives_error_body_timeout(self):
+        for status in (403, 500):
+            with self.subTest(status=status):
+                self.open.reset_mock()
+                body = ReadTimeout()
+                self.open.side_effect = urllib.error.HTTPError(
+                    "https://example.invalid", status, "failed", {}, body
+                )
+                with self.assertRaisesRegex(reader.RobloxLogsError, f"HTTP {status}: Timed out"):
+                    self.request()
+                self.assertEqual(self.open.call_count, 1)
+                self.sleep.assert_not_called()
+                self.assertTrue(body.closed)
+
 
 if __name__ == "__main__":
     unittest.main()
